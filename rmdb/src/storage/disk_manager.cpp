@@ -16,6 +16,7 @@ See the Mulan PSL v2 for more details. */
 #include <unistd.h>    // for lseek
 
 #include "defs.h"
+#include "errors.h"
 
 DiskManager::DiskManager() { memset(fd2pageno_, 0, MAX_FD * (sizeof(std::atomic<page_id_t>) / sizeof(char))); }
 
@@ -40,7 +41,7 @@ void DiskManager::write_page(int fd, page_id_t page_no, const char *offset, int 
     ssize_t bytes_written = write(fd, offset, num_bytes);
 
     if (bytes_written != num_bytes) {
-        throw std::runtime_error("DiskManager::write_page Error");
+        throw InternalError("DiskManager::write_page Error");
     }
 }
 
@@ -58,13 +59,13 @@ void DiskManager::read_page(int fd, page_id_t page_no, char *offset, int num_byt
     // 注意read返回值与num_bytes不等时，throw InternalError("DiskManager::read_page Error");
     off_t offset_in_file = page_no * PAGE_SIZE;
     if (lseek(fd, offset_in_file, SEEK_SET) == -1) {
-        throw std::runtime_error("DiskManager::read_page Error: lseek failed");
+        throw InternalError("DiskManager::read_page Error: lseek failed");
     }
 
     ssize_t bytes_read = read(fd, offset, num_bytes);
 
     if (bytes_read != num_bytes) {
-        throw std::runtime_error("DiskManager::read_page Error");
+        throw InternalError("DiskManager::read_page Error");
     }
 }
 
@@ -122,13 +123,13 @@ void DiskManager::create_file(const std::string &path) {
     // 调用open()函数，使用O_CREAT模式
     // 注意不能重复创建相同文件
     if (is_file(path)) {
-        throw std::runtime_error("DiskManager::create_file Error: file already exists");
+        throw FileExistsError("DiskManager::create_file Error: file already exists");
     }
 
     int fd = open(path.c_str(), O_CREAT);
 
     if (fd == -1) {
-        throw std::runtime_error("DiskManager::create_file Error: open failed");
+        throw InternalError("DiskManager::create_file Error: open failed");
     }
     close(fd);
 }
@@ -142,11 +143,11 @@ void DiskManager::destroy_file(const std::string &path) {
     // 调用unlink()函数
     // 注意不能删除未关闭的文件
     if (path2fd_.find(path) != path2fd_.end()) {
-        throw std::runtime_error("DiskManager::destroy_file Error: file is open");
+        throw FileNotClosedError("DiskManager::destroy_file Error: file is open");
     }
 
     if (unlink(path.c_str()) == -1) {
-        throw std::runtime_error("DiskManager::destroy_file Error: unlink failed");
+        throw FileNotFoundError("DiskManager::destroy_file Error: unlink failed");
     }
     
 }
@@ -162,13 +163,13 @@ int DiskManager::open_file(const std::string &path) {
     // 调用open()函数，使用O_RDWR模式
     // 注意不能重复打开相同文件，并且需要更新文件打开列表
     if (path2fd_.find(path) != path2fd_.end()) {
-        throw std::runtime_error("DiskManager::open_file Error: file already open");
+        throw FileNotClosedError("DiskManager::open_file Error: file already open");
     }
 
     int fd = open(path.c_str(), O_RDWR);
 
     if (fd == -1) {
-        throw std::runtime_error("DiskManager::open_file Error: open failed");
+        throw FileNotFoundError("DiskManager::open_file Error: open failed");
     }
     
     path2fd_[path] = fd;
@@ -187,10 +188,10 @@ void DiskManager::close_file(int fd) {
     // 注意不能关闭未打开的文件，并且需要更新文件打开列表
     auto it = fd2path_.find(fd);
     if (it == fd2path_.end()) {
-        throw std::runtime_error("DiskManager::close_file Error: file not open");
+        throw FileNotOpenError(fd);
     }
     if (close(fd) == -1) {
-        throw std::runtime_error("DiskManager::close_file Error: close failed");
+        throw FileExistsError("DiskManager::close_file Error: close failed");
     }
     path2fd_.erase(it->second);
     fd2path_.erase(it);
