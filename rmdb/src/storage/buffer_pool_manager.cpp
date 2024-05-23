@@ -191,12 +191,14 @@ Page* BufferPoolManager::new_page(PageId* page_id) {
     }
 
     Page* page = &pages_[frame_id];
+    auto old_page_id = page->get_page_id();
     if (page->is_dirty_) {
         disk_manager_->write_page(page->get_page_id().fd, page->get_page_id().page_no, page->data_, PAGE_SIZE);
     }
 
     page_id->page_no = disk_manager_->allocate_page(page_id->fd);
     page_table_[*page_id] = frame_id;
+    page_table_.erase(old_page_id);
     page->id_ = *page_id;
     page->pin_count_ = 1;
     page->is_dirty_ = false;
