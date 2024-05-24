@@ -191,17 +191,19 @@ Page* BufferPoolManager::new_page(PageId* page_id) {
     }
 
     Page* page = &pages_[frame_id];
-    if (page->is_dirty_) {
-        disk_manager_->write_page(page->get_page_id().fd, page->get_page_id().page_no, page->data_, PAGE_SIZE);
-    }
-    
-    page_table_.erase(page->get_page_id());
     page_id->page_no = disk_manager_->allocate_page(page_id->fd);
-    page_table_[*page_id] = frame_id;
-    page->id_ = *page_id;
-    page->pin_count_ = 1;
-    page->is_dirty_ = false;
-    memset(page->data_, 0, PAGE_SIZE);
+
+    update_page(page, *page_id, frame_id);
+//    if (page->is_dirty_) {
+//        disk_manager_->write_page(page->get_page_id().fd, page->get_page_id().page_no, page->data_, PAGE_SIZE);
+//    }
+//    page_table_.erase(page->get_page_id());
+//    page_table_[*page_id] = frame_id;
+//    page->id_ = *page_id;
+//    page->pin_count_ = 1;
+//    page->is_dirty_ = false;
+//    memset(page->data_, 0, PAGE_SIZE);
+    page->pin_count_++;
     replacer_->pin(frame_id);
 
     return page;
@@ -255,7 +257,7 @@ void BufferPoolManager::flush_all_pages(int fd) {
         PageId page_id = entry.first;
         frame_id_t frame_id = entry.second;
         Page* page = &pages_[frame_id];
-        if (page->is_dirty_ && fd == page_id.fd) {
+        if (fd == page_id.fd) {
             disk_manager_->write_page(fd, page_id.page_no, page->data_, PAGE_SIZE);
             page->is_dirty_ = false;
         }

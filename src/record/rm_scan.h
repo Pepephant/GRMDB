@@ -11,6 +11,7 @@ See the Mulan PSL v2 for more details. */
 #pragma once
 
 #include "rm_defs.h"
+#include "rm_file_handle.h"
 
 class RmFileHandle;
 
@@ -25,4 +26,9 @@ public:
     bool is_end() const override;
 
     Rid rid() const override;
+private:
+    int num_pages_;
+    int num_records_;
+    int end_page_no_{INVALID_PAGE_ID};
+    int fd_;
 };
