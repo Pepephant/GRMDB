@@ -94,9 +94,7 @@ Page* BufferPoolManager::fetch_page(PageId page_id) {
     }
     
     Page* page = &pages_[frame_id];
-    if (page->is_dirty_) {
-        update_page(page, page_id, frame_id);
-    }
+    update_page(page, page_id, frame_id);
     disk_manager_->read_page(page->get_page_id().fd,page->get_page_id().page_no,page->get_data(),PAGE_SIZE);
     page->pin_count_++;
     replacer_->pin(frame_id);
