@@ -85,7 +85,19 @@ void SmManager::drop_db(const std::string& db_name) {
  * @param {string&} db_name 数据库名称，与文件夹同名
  */
 void SmManager::open_db(const std::string& db_name) {
-    
+    if (!is_dir(db_name)) {
+        throw DatabaseNotFoundError(db_name);
+    }
+
+    // 进入名为db_name的目录
+    if (chdir(db_name.c_str()) < 0) {
+        throw UnixError();
+    }
+
+    std::ifstream ifs(DB_META_NAME);
+
+    // Read from db.meta
+    ifs >> db_;
 }
 
 /**
@@ -101,7 +113,12 @@ void SmManager::flush_meta() {
  * @description: 关闭数据库并把数据落盘
  */
 void SmManager::close_db() {
-    
+    std::ofstream ofs(DB_META_NAME);
+    ofs << db_;
+
+    if (chdir("..") < 0) {
+        throw UnixError();
+    }
 }
 
 /**
@@ -188,7 +205,14 @@ void SmManager::create_table(const std::string& tab_name, const std::vector<ColD
  * @param {Context*} context
  */
 void SmManager::drop_table(const std::string& tab_name, Context* context) {
-    
+    if (!db_.is_table(tab_name)) {
+        throw TableNotFoundError(tab_name);
+    }
+
+    rm_manager_->close_file(fhs_[tab_name].get());
+    rm_manager_->destroy_file(tab_name);
+    db_.tabs_.erase(tab_name);
+    fhs_.erase(tab_name);
 }
 
 /**
