@@ -29,9 +29,13 @@ class SeqScanExecutor : public AbstractExecutor {
     std::unique_ptr<RecScan> scan_;     // table_iterator
 
     SmManager *sm_manager_;
+    /*My parameter*/
+    bool is_end_;
+    Rid last_rid_;
 
    public:
     SeqScanExecutor(SmManager *sm_manager, std::string tab_name, std::vector<Condition> conds, Context *context) {
+        std::cout << "Try initializing SeqScanExecutor" << '\n';
         sm_manager_ = sm_manager;
         tab_name_ = std::move(tab_name);
         conds_ = std::move(conds);
@@ -43,19 +47,168 @@ class SeqScanExecutor : public AbstractExecutor {
         context_ = context;
 
         fed_conds_ = conds_;
+        std::cout << "SeqScanExecutor initialized" << '\n';
     }
 
     void beginTuple() override {
-        
+        std::cout << "SeqScanExecutor::beginTuple()\n";
+
+        scan_ = std::make_unique<RmScan>(fh_);
+        rid_ = scan_->rid();
+
+        while (!scan_->is_end()) {
+            auto tuple = fh_->get_record(rid_, context_);
+            if (eval_condition(conds_, tuple.get())) {
+                last_rid_ = scan_->rid();
+            }
+            scan_->next();
+            rid_ = scan_->rid();
+        }
+
+        scan_ = std::make_unique<RmScan>(fh_);
+        is_end_ = false;
+        rid_ = scan_->rid();
+
+        while (!scan_->is_end()) {
+            auto tuple = fh_->get_record(rid_, context_);
+            scan_->next();
+            if (eval_condition(conds_, tuple.get())) {
+                return ;
+            }
+            rid_ = scan_->rid();
+        }
+
+        is_end_ = true;
     }
 
     void nextTuple() override {
-        
+        std::cout << "SeqScanExecutor::nextTuple()\n";
+
+        if (last_rid_ == rid_) {
+            is_end_ = true;
+            return ;
+        }
+
+        while (!scan_->is_end()) {
+            auto tuple = fh_->get_record(rid_, context_);
+            rid_ = scan_->rid();
+            scan_->next();
+            if (eval_condition(conds_, tuple.get())) {
+                return ;
+            }
+        }
+    }
+
+    bool is_end() const override {
+        return is_end_;
+    }
+
+    const std::vector<ColMeta> & cols() const override {
+        return cols_;
     }
 
     std::unique_ptr<RmRecord> Next() override {
-        return nullptr;
+        std::cout << "Got one record" << '\n';
+        return fh_->get_record(rid_, context_);
+    }
+
+    size_t tupleLen() const override {
+        return len_;
     }
 
     Rid &rid() override { return rid_; }
+
+private:
+    bool eval_condition(std::vector<Condition> conds, RmRecord* tuple) {
+        for (auto& cond: conds_) {
+            auto left = getValue(cond.lhs_col, tuple);
+            Value right{};
+            if (cond.is_rhs_val) {
+                right = cond.rhs_val;
+            } else {
+                right = getValue(cond.rhs_col, tuple);
+            }
+
+            bool pred_cond = false;
+            if (left.type == TYPE_INT && right.type == TYPE_INT) {
+                pred_cond = ValueComp(left.int_val, right.int_val, cond.op);
+            } else if (left.type == TYPE_FLOAT && right.type == TYPE_INT) {
+                pred_cond = ValueComp(left.float_val, static_cast<float>(right.int_val), cond.op);
+            } else if (left.type == TYPE_INT && right.type == TYPE_FLOAT) {
+                pred_cond = ValueComp(static_cast<float>(left.int_val), right.float_val, cond.op);
+            } else if (left.type == TYPE_FLOAT && right.type == TYPE_FLOAT) {
+                pred_cond = ValueComp(left.float_val, right.float_val, cond.op);
+            } else if (left.type == TYPE_STRING && right.type == TYPE_STRING) {
+                pred_cond = ValueComp(left.str_val, right.str_val, cond.op);
+            } else {
+                auto lhs = cond.lhs_col.tab_name + ":" + cond.lhs_col.col_name;
+                auto rhs = cond.rhs_col.tab_name + ":" + cond.rhs_col.col_name;
+                throw IncompatibleTypeError(lhs, rhs);
+            }
+
+            if (!pred_cond) { return false; }
+        }
+        return true;
+    }
+
+    Value getValue(TabCol col, RmRecord* tuple) {
+        auto col_iter = get_col(cols_, col);
+        auto col_meta = cols_[col_iter - cols_.begin()];
+        char* col_raw = new char[col_meta.len];
+        memset(col_raw, 0, col_meta.len);
+        memcpy(col_raw, tuple->data + col_meta.offset, col_meta.len);
+
+        if (col_meta.type == TYPE_INT) {
+            auto int_val = *(int *)(col_raw);
+            return {.type = TYPE_INT, .int_val = int_val};
+        } else if (col_meta.type == TYPE_FLOAT) {
+            auto float_val = *(float *)(col_raw);
+            return {.type = TYPE_FLOAT, .float_val = float_val};
+        } else if (col_meta.type == TYPE_STRING) {
+            auto str_val = std::string((char *)col_raw, col_meta.len);
+            str_val.resize(strlen(str_val.c_str()));
+            return {.type = TYPE_STRING, .str_val = str_val};
+        }
+
+        return Value{};
+    }
+
+    inline bool ValueComp(int left, int right, CompOp op) {
+        switch (op) {
+            case OP_EQ: return left == right;
+            case OP_NE: return left != right;
+            case OP_GE: return left >= right;
+            case OP_LE: return left <= right;
+            case OP_GT: return left > right;
+            case OP_LT: return left < right;
+            default: break;
+        }
+        return false;
+    }
+
+    inline bool ValueComp(float left, float right, CompOp op) {
+        switch (op) {
+            case OP_EQ: return left == right;
+            case OP_NE: return left != right;
+            case OP_GE: return left >= right;
+            case OP_LE: return left <= right;
+            case OP_GT: return left > right;
+            case OP_LT: return left < right;
+            default: break;
+        }
+        return false;
+    }
+
+    inline bool ValueComp(std::string left, std::string right, CompOp op) {
+        switch (op) {
+            case OP_EQ: return left == right;
+            case OP_NE: return left != right;
+            case OP_GE: return left >= right;
+            case OP_LE: return left <= right;
+            case OP_GT: return left > right;
+            case OP_LT: return left < right;
+            default: break;
+        }
+        return false;
+    }
 };
