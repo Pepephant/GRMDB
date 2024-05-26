@@ -23,6 +23,8 @@ std::unique_ptr<RmRecord> RmFileHandle::get_record(const Rid& rid, Context* cont
     auto page_handler = fetch_page_handle(rid.page_no);
     char* data = page_handler.get_slot(rid.slot_no);
 
+    auto page_no = page_handler.page->get_page_id().page_no;
+    buffer_pool_manager_->unpin_page({fd_, page_no}, true);
     return std::make_unique<RmRecord>(file_hdr_.record_size, data);
 }
 
