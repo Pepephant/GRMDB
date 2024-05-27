@@ -24,6 +24,9 @@ class DeleteExecutor : public AbstractExecutor {
     std::string tab_name_;          // 表名称
     SmManager *sm_manager_;
 
+    /* My fields */
+    std::vector<ColMeta> cols_;
+
    public:
     DeleteExecutor(SmManager *sm_manager, const std::string &tab_name, std::vector<Condition> conds,
                    std::vector<Rid> rids, Context *context) {
@@ -37,8 +40,112 @@ class DeleteExecutor : public AbstractExecutor {
     }
 
     std::unique_ptr<RmRecord> Next() override {
+        cols_ = tab_.cols;
+        for (auto& rid: rids_) {
+            auto tuple = fh_->get_record(rid, context_);
+            if (eval_condition(conds_, tuple.get())) {
+                fh_->delete_record(rid, context_);
+            }
+        }
         return nullptr;
     }
 
     Rid &rid() override { return _abstract_rid; }
+
+private:
+    bool eval_condition(std::vector<Condition> conds, RmRecord* tuple) {
+        for (auto& cond: conds_) {
+            auto left = getValue(cond.lhs_col, tuple);
+            Value right{};
+            if (cond.is_rhs_val) {
+                right = cond.rhs_val;
+            } else {
+                right = getValue(cond.rhs_col, tuple);
+            }
+
+            bool pred_cond = false;
+            if (left.type == TYPE_INT && right.type == TYPE_INT) {
+                pred_cond = ValueComp(left.int_val, right.int_val, cond.op);
+            } else if (left.type == TYPE_FLOAT && right.type == TYPE_INT) {
+                pred_cond = ValueComp(left.float_val, static_cast<float>(right.int_val), cond.op);
+            } else if (left.type == TYPE_INT && right.type == TYPE_FLOAT) {
+                pred_cond = ValueComp(static_cast<float>(left.int_val), right.float_val, cond.op);
+            } else if (left.type == TYPE_FLOAT && right.type == TYPE_FLOAT) {
+                pred_cond = ValueComp(left.float_val, right.float_val, cond.op);
+            } else if (left.type == TYPE_STRING && right.type == TYPE_STRING) {
+                pred_cond = ValueComp(left.str_val, right.str_val, cond.op);
+            } else {
+                auto lhs = cond.lhs_col.tab_name + ":" + cond.lhs_col.col_name;
+                auto rhs = cond.rhs_col.tab_name + ":" + cond.rhs_col.col_name;
+                throw IncompatibleTypeError(lhs, rhs);
+            }
+
+            if (!pred_cond) { return false; }
+        }
+        return true;
+    }
+
+    Value getValue(TabCol col, RmRecord* tuple) {
+        auto col_iter = get_col(cols_, col);
+        auto col_meta = cols_[col_iter - cols_.begin()];
+        char* col_raw = new char[col_meta.len];
+        memset(col_raw, 0, col_meta.len);
+        memcpy(col_raw, tuple->data + col_meta.offset, col_meta.len);
+
+        Value val{};
+        val.type = col_meta.type;
+
+        if (col_meta.type == TYPE_INT) {
+            auto int_val = *(int *)(col_raw);
+            val.int_val = int_val;
+        } else if (col_meta.type == TYPE_FLOAT) {
+            auto float_val = *(float *)(col_raw);
+            val.float_val = float_val;
+        } else if (col_meta.type == TYPE_STRING) {
+            auto str_val = std::string((char *)col_raw, col_meta.len);
+            str_val.resize(strlen(str_val.c_str()));
+            val.str_val = str_val;
+        }
+
+        return val;
+    }
+
+    inline bool ValueComp(int left, int right, CompOp op) {
+        switch (op) {
+            case OP_EQ: return left == right;
+            case OP_NE: return left != right;
+            case OP_GE: return left >= right;
+            case OP_LE: return left <= right;
+            case OP_GT: return left > right;
+            case OP_LT: return left < right;
+            default: break;
+        }
+        return false;
+    }
+
+    inline bool ValueComp(float left, float right, CompOp op) {
+        switch (op) {
+            case OP_EQ: return left == right;
+            case OP_NE: return left != right;
+            case OP_GE: return left >= right;
+            case OP_LE: return left <= right;
+            case OP_GT: return left > right;
+            case OP_LT: return left < right;
+            default: break;
+        }
+        return false;
+    }
+
+    inline bool ValueComp(std::string left, std::string right, CompOp op) {
+        switch (op) {
+            case OP_EQ: return left == right;
+            case OP_NE: return left != right;
+            case OP_GE: return left >= right;
+            case OP_LE: return left <= right;
+            case OP_GT: return left > right;
+            case OP_LT: return left < right;
+            default: break;
+        }
+        return false;
+    }
 };
