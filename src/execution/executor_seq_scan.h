@@ -90,8 +90,8 @@ class SeqScanExecutor : public AbstractExecutor {
         }
 
         while (!scan_->is_end()) {
-            auto tuple = fh_->get_record(rid_, context_);
             rid_ = scan_->rid();
+            auto tuple = fh_->get_record(rid_, context_);
             scan_->next();
             if (eval_condition(conds_, tuple.get())) {
                 return ;
