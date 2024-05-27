@@ -158,19 +158,22 @@ private:
         memset(col_raw, 0, col_meta.len);
         memcpy(col_raw, tuple->data + col_meta.offset, col_meta.len);
 
+        Value val{};
+        val.type = col_meta.type;
+
         if (col_meta.type == TYPE_INT) {
             auto int_val = *(int *)(col_raw);
-            return Value{.type = TYPE_INT, .int_val = int_val};
+            val.int_val = int_val;
         } else if (col_meta.type == TYPE_FLOAT) {
             auto float_val = *(float *)(col_raw);
-            return Value{.type = TYPE_FLOAT, .float_val = float_val};
+            val.float_val = float_val;
         } else if (col_meta.type == TYPE_STRING) {
             auto str_val = std::string((char *)col_raw, col_meta.len);
             str_val.resize(strlen(str_val.c_str()));
-            return Value{.type = TYPE_STRING, .str_val = str_val};
+            val.str_val = str_val;
         }
 
-        return Value{};
+        return val;
     }
 
     inline bool ValueComp(int left, int right, CompOp op) {
