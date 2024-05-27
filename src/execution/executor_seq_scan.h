@@ -160,14 +160,14 @@ private:
 
         if (col_meta.type == TYPE_INT) {
             auto int_val = *(int *)(col_raw);
-            return {.type = TYPE_INT, .int_val = int_val};
+            return Value{.type = TYPE_INT, .int_val = int_val};
         } else if (col_meta.type == TYPE_FLOAT) {
             auto float_val = *(float *)(col_raw);
-            return {.type = TYPE_FLOAT, .float_val = float_val};
+            return Value{.type = TYPE_FLOAT, .float_val = float_val};
         } else if (col_meta.type == TYPE_STRING) {
             auto str_val = std::string((char *)col_raw, col_meta.len);
             str_val.resize(strlen(str_val.c_str()));
-            return {.type = TYPE_STRING, .str_val = str_val};
+            return Value{.type = TYPE_STRING, .str_val = str_val};
         }
 
         return Value{};
