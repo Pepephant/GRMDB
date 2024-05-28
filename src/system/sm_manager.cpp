@@ -349,3 +349,22 @@ void SmManager::drop_index(const std::string& tab_name, const std::vector<ColMet
 
     flush_meta();
 }
+
+void SmManager::show_index(const std::string& tab_name, Context* context) {
+    std::fstream outfile;
+    outfile.open("output.txt", std::ios::out | std::ios::app);
+
+    auto& tab_meta = db_.tabs_[tab_name];
+    for (auto& index: tab_meta.indexes) {
+        RecordPrinter printer(3);
+
+        std::string col_info = "(";
+        for (int i = 0; i < index.col_num - 1; i++) {
+            col_info += index.cols[i].name + ",";
+        }
+        col_info += index.cols[index.col_num - 1].name + ")";
+
+        printer.print_record({tab_name, "unique", col_info}, context);
+    }
+    outfile.close();
+}
