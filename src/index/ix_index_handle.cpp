@@ -640,6 +640,8 @@ bool IxIndexHandle::adjust_root(IxNodeHandle *old_root_node) {
 #endif
     if (!old_root_node->is_leaf_page() && old_root_node->get_size() == 1) {
         file_hdr_->root_page_ = old_root_node->value_at(0);
+        auto new_root = fetch_node(file_hdr_->root_page_);
+        new_root->set_parent_page_no(IX_NO_PAGE);
         release_node_handle(*old_root_node);
         return true;
     }
