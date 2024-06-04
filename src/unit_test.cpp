@@ -1125,3 +1125,508 @@ TEST_F(BufferPoolManagerTest, ConcurrencyTest) {
         }
     }
 }
+
+#define TEST_INDEX
+#include "system/sm_manager.h"
+
+TEST(IndexNodeTests, SampleTest1) {
+    auto rm_manager = std::make_unique<RmManager>(disk_manager.get(), buffer_pool_manager.get());
+    auto ix_manager = std::make_unique<IxManager>(disk_manager.get(), buffer_pool_manager.get());
+    auto sm_manager = std::make_unique<SmManager>(disk_manager.get(), buffer_pool_manager.get(), rm_manager.get(), ix_manager.get());
+
+    sm_manager->create_db("Test_index");
+    sm_manager->open_db("Test_index");
+
+    std::string tab_name = "test1";
+    std::string col_name = "id";
+    std::vector<ColDef> col_defs;
+    std::vector<std::string> col_names;
+    ColDef col_def{col_name, TYPE_STRING, 5};
+    col_defs.push_back(col_def);
+    col_names.push_back(col_name);
+
+    sm_manager->create_table(tab_name, col_defs, nullptr);
+    sm_manager->create_index(tab_name, col_names, nullptr);
+    auto index_name = sm_manager->get_ix_manager()->get_index_name(tab_name, col_names);
+    auto ih = sm_manager->ihs_.at(index_name).get();
+
+    IxFileHdr* ix_hdr = ih->getFileHdr();
+    std::cout << "Size of tree node: " << ix_hdr->btree_order_ << "\n\n";
+
+    std::vector<int> keys;
+    std::vector<int> delete_keys;
+    std::vector<int> remain_keys;
+
+    for (int j = 1; j <= 311; j++) {
+        keys.push_back(j);
+        if ( j % 2 == 0 ) {
+            delete_keys.push_back(j);
+        } else {
+            remain_keys.push_back(j);
+        }
+    }
+
+    std::random_shuffle(keys.begin(), keys.end());
+
+    for (auto& key: keys) {
+        std::vector<Rid> res;
+        Rid rid{0, key};
+        char* key_buf = new char[5];
+        memset(key_buf, 0, 5);
+        std::string key_str = std::to_string(key);
+        memcpy(key_buf, key_str.c_str(), key_str.size());
+        ih->insert_entry(key_buf, {0, key}, nullptr);
+        ih->get_value(key_buf, &res, nullptr);
+        EXPECT_EQ(res.size(), 1);
+        EXPECT_EQ(res.back(), rid);
+    }
+
+    for (auto& key: keys) {
+        std::vector<Rid> res;
+        Rid rid{0, key};
+        char* key_buf = new char[5];
+        memset(key_buf, 0, 5);
+        std::string key_str = std::to_string(key);
+        memcpy(key_buf, key_str.c_str(), key_str.size());
+        ih->get_value(key_buf, &res, nullptr);
+        EXPECT_EQ(res.size(), 1);
+        EXPECT_EQ(res.back(), rid);
+    }
+
+    for (auto& key: delete_keys) {
+        std::vector<Rid> res;
+        Rid rid{0, key};
+        char* key_buf = new char[5];
+        memset(key_buf, 0, 5);
+        std::string key_str = std::to_string(key);
+        memcpy(key_buf, key_str.c_str(), key_str.size());
+        ih->delete_entry(key_buf, nullptr);
+        ih->get_value(key_buf, &res, nullptr);
+        EXPECT_EQ(res.size(), 0);
+    }
+
+//    for (auto& key: remain_keys) {
+//        std::vector<Rid> res;
+//        Rid rid{0, key};
+//        char* key_buf = new char[5];
+//        memset(key_buf, 0, 5);
+//        std::string key_str = std::to_string(key);
+//        memcpy(key_buf, key_str.c_str(), key_str.size());
+//        ih->get_value(key_buf, &res, nullptr);
+//        EXPECT_EQ(res.size(), 0);
+//    }
+
+    sm_manager->drop_index(tab_name, col_names, nullptr);
+    sm_manager->drop_table(tab_name, nullptr);
+    sm_manager->close_db();
+    sm_manager->drop_db("Test_index");
+}
+
+TEST(IndexInsertTests, SampleTest2) {
+    auto rm_manager = std::make_unique<RmManager>(disk_manager.get(), buffer_pool_manager.get());
+    auto ix_manager = std::make_unique<IxManager>(disk_manager.get(), buffer_pool_manager.get());
+    auto sm_manager = std::make_unique<SmManager>(disk_manager.get(), buffer_pool_manager.get(), rm_manager.get(), ix_manager.get());
+
+    sm_manager->create_db("Test_index");
+    sm_manager->open_db("Test_index");
+
+    std::string tab_name = "test1";
+    std::string col_name = "id";
+    std::vector<ColDef> col_defs;
+    std::vector<std::string> col_names;
+    ColDef col_def{col_name, TYPE_STRING, 300};
+    col_defs.push_back(col_def);
+    col_names.push_back(col_name);
+
+    sm_manager->create_table(tab_name, col_defs, nullptr);
+    sm_manager->create_index(tab_name, col_names, nullptr);
+    auto index_name = sm_manager->get_ix_manager()->get_index_name(tab_name, col_names);
+    auto ih = sm_manager->ihs_.at(index_name).get();
+
+    IxFileHdr* ix_hdr = ih->getFileHdr();
+    std::cout << "Size of tree node: " << ix_hdr->btree_order_ << "\n\n";
+
+    std::vector<int> keys;
+    for (int j = 1; j <= 1890; j++) {
+        keys.push_back(j);
+    }
+
+    std::random_shuffle(keys.begin(), keys.end());
+
+    for (auto& key: keys) {
+        if (key == 89) {
+            std::cout << "";
+        }
+        std::vector<Rid> res;
+        Rid rid{0, key};
+        char* key_buf = new char[300];
+        memset(key_buf, 0, 300);
+        std::string key_str = std::to_string(key);
+        memcpy(key_buf, key_str.c_str(), key_str.size());
+        ih->insert_entry(key_buf, {0, key}, nullptr);
+        ih->get_value(key_buf, &res, nullptr);
+        EXPECT_EQ(res.size(), 1);
+        EXPECT_EQ(res.back(), rid);
+    }
+
+    for (auto& key: keys) {
+        std::vector<Rid> res;
+        Rid rid{0, key};
+        char* key_buf = new char[300];
+        memset(key_buf, 0, 300);
+        std::string key_str = std::to_string(key);
+        memcpy(key_buf, key_str.c_str(), key_str.size());
+        ih->get_value(key_buf, &res, nullptr);
+        EXPECT_EQ(res.size(), 1);
+        EXPECT_EQ(res.back(), rid);
+    }
+
+    sm_manager->drop_index(tab_name, col_names, nullptr);
+    sm_manager->drop_table(tab_name, nullptr);
+    sm_manager->close_db();
+    sm_manager->drop_db("Test_index");
+}
+
+TEST(IndexInsertTests, SampleTest1) {
+    auto rm_manager = std::make_unique<RmManager>(disk_manager.get(), buffer_pool_manager.get());
+    auto ix_manager = std::make_unique<IxManager>(disk_manager.get(), buffer_pool_manager.get());
+    auto sm_manager = std::make_unique<SmManager>(disk_manager.get(), buffer_pool_manager.get(), rm_manager.get(), ix_manager.get());
+
+    sm_manager->create_db("Test_index");
+    sm_manager->open_db("Test_index");
+
+    std::string tab_name = "test1";
+    std::string col_name = "id";
+    std::vector<ColDef> col_defs;
+    std::vector<std::string> col_names;
+    ColDef col_def{col_name, TYPE_STRING, 300};
+    col_defs.push_back(col_def);
+    col_names.push_back(col_name);
+
+    sm_manager->create_table(tab_name, col_defs, nullptr);
+    sm_manager->create_index(tab_name, col_names, nullptr);
+    auto index_name = sm_manager->get_ix_manager()->get_index_name(tab_name, col_names);
+    auto ih = sm_manager->ihs_.at(index_name).get();
+
+    IxFileHdr* ix_hdr = ih->getFileHdr();
+    std::cout << "Size of tree node: " << ix_hdr->btree_order_ << "\n\n";
+
+    std::vector<int> keys;
+    for (int j = 1; j <= 18900; j++) {
+        keys.push_back(j);
+    }
+
+    for (auto& key: keys) {
+        if (key == 89) {
+            std::cout << "";
+        }
+        std::vector<Rid> res;
+        Rid rid{0, key};
+        char* key_buf = new char[300];
+        memset(key_buf, 0, 300);
+        std::string key_str = std::to_string(key);
+        memcpy(key_buf, key_str.c_str(), key_str.size());
+        ih->insert_entry(key_buf, {0, key}, nullptr);
+        ih->get_value(key_buf, &res, nullptr);
+        EXPECT_EQ(res.size(), 1);
+        EXPECT_EQ(res.back(), rid);
+    }
+
+    for (auto& key: keys) {
+        std::vector<Rid> res;
+        Rid rid{0, key};
+        char* key_buf = new char[300];
+        memset(key_buf, 0, 300);
+        std::string key_str = std::to_string(key);
+        memcpy(key_buf, key_str.c_str(), key_str.size());
+        ih->get_value(key_buf, &res, nullptr);
+        EXPECT_EQ(res.size(), 1);
+        EXPECT_EQ(res.back(), rid);
+    }
+
+    sm_manager->drop_index(tab_name, col_names, nullptr);
+    sm_manager->drop_table(tab_name, nullptr);
+    sm_manager->close_db();
+    sm_manager->drop_db("Test_index");
+}
+
+TEST(IndexDeleteTests, SampleTest1) {
+    auto rm_manager = std::make_unique<RmManager>(disk_manager.get(), buffer_pool_manager.get());
+    auto ix_manager = std::make_unique<IxManager>(disk_manager.get(), buffer_pool_manager.get());
+    auto sm_manager = std::make_unique<SmManager>(disk_manager.get(), buffer_pool_manager.get(), rm_manager.get(), ix_manager.get());
+
+    sm_manager->create_db("Test_index");
+    sm_manager->open_db("Test_index");
+
+    std::string tab_name = "test1";
+    std::string col_name = "id";
+    std::vector<ColDef> col_defs;
+    std::vector<std::string> col_names;
+    ColDef col_def{col_name, TYPE_STRING, 300};
+    col_defs.push_back(col_def);
+    col_names.push_back(col_name);
+
+    sm_manager->create_table(tab_name, col_defs, nullptr);
+    sm_manager->create_index(tab_name, col_names, nullptr);
+    auto index_name = sm_manager->get_ix_manager()->get_index_name(tab_name, col_names);
+    auto ih = sm_manager->ihs_.at(index_name).get();
+
+    IxFileHdr* ix_hdr = ih->getFileHdr();
+    std::cout << "Size of tree node: " << ix_hdr->btree_order_ << "\n\n";
+
+    std::vector<int> keys;
+    std::vector<int> delete_keys;
+    std::vector<int> remain_keys;
+
+    for (int j = 1; j <= 100; j++) {
+        keys.push_back(j);
+        if (j % 2 != 0) {
+            delete_keys.push_back(j);
+        } else {
+            remain_keys.push_back(j);
+        }
+    }
+
+    for (auto& key: keys) {
+        std::vector<Rid> res;
+        Rid rid{0, key};
+        char* key_buf = new char[300];
+        memset(key_buf, 0, 300);
+        std::string key_str = std::to_string(key);
+        memcpy(key_buf, key_str.c_str(), key_str.size());
+        ih->insert_entry(key_buf, {0, key}, nullptr);
+    }
+
+    for (auto& key: delete_keys) {
+        std::vector<Rid> res;
+        Rid rid{0, key};
+        char* key_buf = new char[300];
+        memset(key_buf, 0, 300);
+        std::string key_str = std::to_string(key);
+        memcpy(key_buf, key_str.c_str(), key_str.size());
+        ih->delete_entry(key_buf, nullptr);
+        ih->get_value(key_buf, &res, nullptr);
+        EXPECT_EQ(res.size(), 0);
+    }
+
+    for (auto& key: remain_keys) {
+        std::vector<Rid> res;
+        Rid rid{0, key};
+        char* key_buf = new char[300];
+        memset(key_buf, 0, 300);
+        std::string key_str = std::to_string(key);
+        memcpy(key_buf, key_str.c_str(), key_str.size());
+        ih->get_value(key_buf, &res, nullptr);
+        EXPECT_NE(res.size(), 0);
+    }
+
+    for (auto& key: remain_keys) {
+        if (key == 44) {
+            ih->show_tree();
+            break;
+        }
+        std::vector<Rid> res;
+        Rid rid{0, key};
+        char* key_buf = new char[300];
+        memset(key_buf, 0, 300);
+        std::string key_str = std::to_string(key);
+        memcpy(key_buf, key_str.c_str(), key_str.size());
+        ih->delete_entry(key_buf, nullptr);
+        EXPECT_EQ(res.size(), 0);
+    }
+
+    sm_manager->drop_index(tab_name, col_names, nullptr);
+    sm_manager->drop_table(tab_name, nullptr);
+    sm_manager->close_db();
+    sm_manager->drop_db("Test_index");
+}
+
+TEST(IndexDeleteTests, SampleTest2) {
+    auto rm_manager = std::make_unique<RmManager>(disk_manager.get(), buffer_pool_manager.get());
+    auto ix_manager = std::make_unique<IxManager>(disk_manager.get(), buffer_pool_manager.get());
+    auto sm_manager = std::make_unique<SmManager>(disk_manager.get(), buffer_pool_manager.get(), rm_manager.get(), ix_manager.get());
+
+    sm_manager->create_db("Test_index");
+    sm_manager->open_db("Test_index");
+
+    std::string tab_name = "test1";
+    std::string col_name = "id";
+    std::vector<ColDef> col_defs;
+    std::vector<std::string> col_names;
+    ColDef col_def{col_name, TYPE_STRING, 300};
+    col_defs.push_back(col_def);
+    col_names.push_back(col_name);
+
+    sm_manager->create_table(tab_name, col_defs, nullptr);
+    sm_manager->create_index(tab_name, col_names, nullptr);
+    auto index_name = sm_manager->get_ix_manager()->get_index_name(tab_name, col_names);
+    auto ih = sm_manager->ihs_.at(index_name).get();
+
+    IxFileHdr* ix_hdr = ih->getFileHdr();
+    std::cout << "Size of tree node: " << ix_hdr->btree_order_ << "\n\n";
+
+    std::vector<int> keys;
+    std::vector<int> delete_keys;
+    std::vector<int> remain_keys;
+
+    for (int j = 1; j <= 10000; j++) {
+        keys.push_back(j);
+        if (j % 5 != 1) {
+            delete_keys.push_back(j);
+        } else {
+            remain_keys.push_back(j);
+        }
+    }
+
+    std::random_shuffle(keys.begin(), keys.end());
+    std::random_shuffle(delete_keys.begin(), delete_keys.end());
+
+    for (auto& key: keys) {
+        std::vector<Rid> res;
+        Rid rid{0, key};
+        char* key_buf = new char[300];
+        memset(key_buf, 0, 300);
+        std::string key_str = std::to_string(key);
+        memcpy(key_buf, key_str.c_str(), key_str.size());
+        ih->insert_entry(key_buf, {0, key}, nullptr);
+    }
+
+    for (auto& key: delete_keys) {
+        std::vector<Rid> res;
+        Rid rid{0, key};
+        char* key_buf = new char[300];
+        memset(key_buf, 0, 300);
+        std::string key_str = std::to_string(key);
+        memcpy(key_buf, key_str.c_str(), key_str.size());
+        ih->delete_entry(key_buf, nullptr);
+        ih->get_value(key_buf, &res, nullptr);
+        EXPECT_EQ(res.size(), 0);
+    }
+
+    for (auto& key: delete_keys) {
+        std::vector<Rid> res;
+        Rid rid{0, key};
+        char* key_buf = new char[300];
+        memset(key_buf, 0, 300);
+        std::string key_str = std::to_string(key);
+        memcpy(key_buf, key_str.c_str(), key_str.size());
+        ih->get_value(key_buf, &res, nullptr);
+        EXPECT_EQ(res.size(), 0);
+    }
+
+    for (auto& key: remain_keys) {
+        std::vector<Rid> res;
+        Rid rid{0, key};
+        char* key_buf = new char[300];
+        memset(key_buf, 0, 300);
+        std::string key_str = std::to_string(key);
+        memcpy(key_buf, key_str.c_str(), key_str.size());
+        ih->get_value(key_buf, &res, nullptr);
+        if (res.size() == 0) {
+            std::cout << key_buf << " not found!!!\n";
+        }
+        EXPECT_NE(res.size(), 0);
+    }
+
+    sm_manager->drop_index(tab_name, col_names, nullptr);
+    sm_manager->drop_table(tab_name, nullptr);
+    sm_manager->close_db();
+    sm_manager->drop_db("Test_index");
+}
+
+TEST(IndexMixTests, SampleTest2) {
+    auto rm_manager = std::make_unique<RmManager>(disk_manager.get(), buffer_pool_manager.get());
+    auto ix_manager = std::make_unique<IxManager>(disk_manager.get(), buffer_pool_manager.get());
+    auto sm_manager = std::make_unique<SmManager>(disk_manager.get(), buffer_pool_manager.get(), rm_manager.get(), ix_manager.get());
+
+    sm_manager->create_db("Test_index");
+    sm_manager->open_db("Test_index");
+
+    std::string tab_name = "test1";
+    std::string col_name = "id";
+    std::vector<ColDef> col_defs;
+    std::vector<std::string> col_names;
+    ColDef col_def{col_name, TYPE_STRING, 300};
+    col_defs.push_back(col_def);
+    col_names.push_back(col_name);
+
+    sm_manager->create_table(tab_name, col_defs, nullptr);
+    sm_manager->create_index(tab_name, col_names, nullptr);
+    auto index_name = sm_manager->get_ix_manager()->get_index_name(tab_name, col_names);
+    auto ih = sm_manager->ihs_.at(index_name).get();
+
+    IxFileHdr* ix_hdr = ih->getFileHdr();
+    std::cout << "Size of tree node: " << ix_hdr->btree_order_ << "\n\n";
+
+    std::vector<int> keys;
+    std::vector<int> delete_keys;
+    std::vector<int> remain_keys;
+
+    for (int j = 1; j <= 10000; j++) {
+        keys.push_back(j);
+    }
+
+    std::random_shuffle(keys.begin(), keys.end());
+
+    for (int i = 0; i < keys.size(); i++) {
+        std::vector<Rid> res;
+        Rid rid{0, keys[i]};
+        char* key_buf = new char[300];
+        memset(key_buf, 0, 300);
+        std::string key_str = std::to_string(keys[i]);
+        memcpy(key_buf, key_str.c_str(), key_str.size());
+
+        remain_keys.push_back(keys[i]);
+        ih->insert_entry(key_buf, rid, nullptr);
+
+        if (i % 2 == 0) {
+            int del = remain_keys[rand() % remain_keys.size()];
+            auto it = std::find(remain_keys.begin(), remain_keys.end(), del);
+            remain_keys.erase(it);
+
+            memset(key_buf, 0, 300);
+            std::string key_str = std::to_string(del);
+            memcpy(key_buf, key_str.c_str(), key_str.size());
+            ih->delete_entry(key_buf, nullptr);
+            delete_keys.push_back(del);
+        }
+    }
+
+    for (auto& key: delete_keys) {
+        std::vector<Rid> res;
+        char* key_buf = new char[300];
+        memset(key_buf, 0, 300);
+        std::string key_str = std::to_string(key);
+        memcpy(key_buf, key_str.c_str(), key_str.size());
+        ih->get_value(key_buf, &res, nullptr);
+        EXPECT_EQ(res.size(), 0);
+    }
+
+    for (auto& key: remain_keys) {
+        std::vector<Rid> res;
+        char* key_buf = new char[300];
+        memset(key_buf, 0, 300);
+        std::string key_str = std::to_string(key);
+        memcpy(key_buf, key_str.c_str(), key_str.size());
+        ih->get_value(key_buf, &res, nullptr);
+        if (res.size() == 0) {
+            std::cout << key_buf << " not found!!!\n";
+        }
+        EXPECT_NE(res.size(), 0);
+    }
+
+    for (auto& key: remain_keys) {
+        char* key_buf = new char[300];
+        memset(key_buf, 0, 300);
+        std::string key_str = std::to_string(key);
+        memcpy(key_buf, key_str.c_str(), key_str.size());
+        ih->delete_entry(key_buf, nullptr);
+    }
+
+    EXPECT_EQ(ih->getFileHdr()->num_pages_, 2);
+
+    sm_manager->drop_index(tab_name, col_names, nullptr);
+    sm_manager->drop_table(tab_name, nullptr);
+    sm_manager->close_db();
+    sm_manager->drop_db("Test_index");
+}
