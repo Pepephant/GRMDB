@@ -12,6 +12,9 @@ See the Mulan PSL v2 for more details. */
 
 #include "ix_defs.h"
 #include "transaction/transaction.h"
+#define TEST_INDEX
+// #define TEST_INDEX_INSERT
+// #define TEST_INDEX_DELETE
 
 enum class Operation { FIND = 0, INSERT, DELETE };  // 三种操作：查找、插入、删除
 
@@ -127,6 +130,29 @@ class IxNodeHandle {
 
     int remove(const char *key);
 
+#ifdef TEST_INDEX
+    void show_internal(const std::string& description) {
+        std::cout << description;
+        if (is_leaf_page()) {
+            std::cout << "Leaf Page " << get_page_no() << " : ";
+            for (int i = 0; i < get_size(); i++) {
+                auto cur_key = std::string(get_key(i));
+                auto cur_rid = *get_rid(i);
+                std::cout << cur_key << ", ";
+            }
+        } else {
+            std::cout << "Internal Page " << get_page_no() << " : ";
+            std::cout << get_rid(0)->page_no << ", ";
+            for (int i = 1; i < get_size(); i++) {
+                auto cur_key = std::string(get_key(i));
+                auto cur_rid = *get_rid(i);
+                std::cout << cur_key << "->" << cur_rid.page_no << ", ";
+            }
+        }
+        std::cout << '\n';
+    }
+#endif
+
     /**
      * @brief used in internal node to remove the last key in root node, and return the last child
      *
@@ -205,6 +231,53 @@ class IxIndexHandle {
 
     Iid leaf_begin() const;
 
+#ifdef TEST_INDEX
+    IxFileHdr* getFileHdr() const { return file_hdr_; };
+
+    void check_child(const char* key, page_id_t root_id) {
+        auto node = fetch_node(root_id);
+
+        if (!node->is_leaf_page()) {
+            for (int i = 0; i < node->get_size(); i++) {
+                auto child = fetch_node(node->value_at(i));
+                if (child->get_parent_page_no() != node->get_page_no()) {
+                    std::cout << "When " << key << ", " << node->get_page_no() << "->" << node->value_at(i);
+                    std::cout << " and " << child->get_page_no() << "->" << child->get_parent_page_no() << '\n';
+                }
+                unpin_node_page(child, false);
+            }
+        }
+
+        if (!node->is_leaf_page()) {
+            for (int i = 0; i < node->get_size(); i++) {
+                check_child(key, node->value_at(i));
+            }
+        }
+        unpin_node_page(node, false);
+    }
+
+    void traverse(page_id_t root_id) {
+        auto node = fetch_node(root_id);
+        node->show_internal("");
+
+        if (!node->is_leaf_page()) {
+            for (int i = 0; i < node->get_size(); i++) {
+                traverse(node->value_at(i));
+            }
+        }
+
+        unpin_node_page(node, false);
+    }
+
+    void show_tree() {
+        traverse(file_hdr_->root_page_);
+    }
+
+    void check_tree(const char* key) {
+        check_child(key, file_hdr_->root_page_);
+    }
+#endif
+
    private:
     // 辅助函数
     void update_root_page_no(page_id_t root) { file_hdr_->root_page_ = root; }
@@ -222,6 +295,8 @@ class IxIndexHandle {
     void erase_leaf(IxNodeHandle *leaf);
 
     void release_node_handle(IxNodeHandle &node);
+
+    void unpin_node_page(IxNodeHandle* node, bool is_dirty);
 
     void maintain_child(IxNodeHandle *node, int child_idx);
 
