@@ -128,6 +128,7 @@ bool BufferPoolManager::unpin_page(PageId page_id, bool is_dirty) {
     Page* page = &pages_[frame_id];
     
     if (page->pin_count_ == 0) {
+        std::cout << "Page " << page_id.page_no << ":";
         printf("page->pin_count==0\n");
         return false;
     }
