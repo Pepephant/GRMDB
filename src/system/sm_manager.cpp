@@ -364,6 +364,7 @@ void SmManager::show_index(const std::string& tab_name, Context* context) {
         }
         col_info += index.cols[index.col_num - 1].name + ")";
 
+        outfile << "| " << tab_name << " | unique | " << col_info << " |\n";
         printer.print_record({tab_name, "unique", col_info}, context);
     }
     outfile.close();
