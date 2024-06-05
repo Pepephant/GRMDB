@@ -137,7 +137,9 @@ class IxNodeHandle {
             std::cout << "Leaf Page " << get_page_no() << " : ";
             for (int i = 0; i < get_size(); i++) {
                 auto cur_key = std::string(get_key(i));
-                auto cur_rid = *get_rid(i);
+                if (get_key(i)[0] == '\0') {
+                    cur_key = "0";
+                }
                 std::cout << cur_key << ", ";
             }
         } else {
@@ -271,10 +273,33 @@ class IxIndexHandle {
 
     void show_tree() {
         traverse(file_hdr_->root_page_);
+        std::cout << "\n";
     }
 
     void check_tree(const char* key) {
         check_child(key, file_hdr_->root_page_);
+    }
+
+    void check_scan() {
+        std::cout << "Start: " << file_hdr_->first_leaf_ << ", ";
+        std::cout << "End: " << file_hdr_->last_leaf_ << '\n';
+        auto cur_id = file_hdr_->first_leaf_;
+        for (int i = 0; i < file_hdr_->num_pages_; i++) {
+            auto node = fetch_node(cur_id);
+            auto prev_id = node->get_prev_leaf();
+            auto next_id = node->get_next_leaf();
+
+            std::string desc = "Prev: " + std::to_string(prev_id);
+            desc += ", Next: " + std::to_string(next_id) + ", ";
+            node->show_internal(desc);
+
+            unpin_node_page(node, false);
+            if (cur_id == file_hdr_->last_leaf_) {
+                break;
+            }
+            cur_id = next_id;
+        }
+        std::cout << "\n";
     }
 #endif
 

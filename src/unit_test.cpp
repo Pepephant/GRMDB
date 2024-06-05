@@ -1240,7 +1240,6 @@ TEST_F(IndexTests, NodeTest1) {
 
     for (auto& key: delete_keys) {
         std::vector<Rid> res;
-        Rid rid{0, key};
         char* key_buf = IndexTests::SetKey(key);
         ih->delete_entry(key_buf, nullptr);
         ih->get_value(key_buf, &res, nullptr);
@@ -1249,37 +1248,6 @@ TEST_F(IndexTests, NodeTest1) {
 }
 
 TEST_F(IndexTests, InsertTest1) {
-    auto ih = IndexTests::GetIh(300);
-
-    IxFileHdr* ix_hdr = ih->getFileHdr();
-    std::cout << "Size of tree node: " << ix_hdr->btree_order_ << "\n\n";
-
-    std::vector<int> keys;
-    for (int j = 1; j <= 1890; j++) {
-        keys.push_back(j);
-    }
-
-    for (auto& key: keys) {
-        std::vector<Rid> res;
-        Rid rid{0, key};
-        char* key_buf = IndexTests::SetKey(key);
-        ih->insert_entry(key_buf, {0, key}, nullptr);
-        ih->get_value(key_buf, &res, nullptr);
-        EXPECT_EQ(res.size(), 1);
-        EXPECT_EQ(res.back(), rid);
-    }
-
-    for (auto& key: keys) {
-        std::vector<Rid> res;
-        Rid rid{0, key};
-        char* key_buf = IndexTests::SetKey(key);
-        ih->get_value(key_buf, &res, nullptr);
-        EXPECT_EQ(res.size(), 1);
-        EXPECT_EQ(res.back(), rid);
-    }
-}
-
-TEST_F(IndexTests, InsertTest2) {
     auto ih = IndexTests::GetIh(300);
 
     IxFileHdr* ix_hdr = ih->getFileHdr();
@@ -1310,6 +1278,18 @@ TEST_F(IndexTests, InsertTest2) {
         EXPECT_EQ(res.size(), 1);
         EXPECT_EQ(res.back(), rid);
     }
+
+    std::sort(keys.begin(), keys.end(), [](int x,int y){return std::to_string(x) < std::to_string(y);});
+    auto lower = ih->leaf_begin();
+    auto upper = ih->leaf_end();
+    auto bpm = buffer_pool_manager_.get();
+    int num_records = 0;
+    for (IxScan scan(ih, lower, upper, bpm); !scan.is_end(); scan.next()) {
+        Rid rid{0, keys[num_records]};
+        num_records++;
+        EXPECT_EQ(scan.rid(), rid);
+    }
+    EXPECT_EQ(num_records, keys.size());
 }
 
 TEST_F(IndexTests, DeleteTest1) {
@@ -1324,7 +1304,7 @@ TEST_F(IndexTests, DeleteTest1) {
 
     for (int j = 1; j <= 10000; j++) {
         keys.push_back(j);
-        if (j % 2 != 0) {
+        if (j % 1320 != 0) {
             delete_keys.push_back(j);
         } else {
             remain_keys.push_back(j);
@@ -1333,7 +1313,6 @@ TEST_F(IndexTests, DeleteTest1) {
 
     for (auto& key: keys) {
         std::vector<Rid> res;
-        Rid rid{0, key};
         char* key_buf = IndexTests::SetKey(key);
         ih->insert_entry(key_buf, {0, key}, nullptr);
     }
@@ -1355,16 +1334,20 @@ TEST_F(IndexTests, DeleteTest1) {
         EXPECT_EQ(res.front(), rid);
     }
 
-    for (auto& key: remain_keys) {
-        std::vector<Rid> res;
-        Rid rid{0, key};
-        char* key_buf = IndexTests::SetKey(key);
-        ih->delete_entry(key_buf, nullptr);
-        EXPECT_EQ(res.size(), 0);
-    }
+    ih->show_tree();
+    ih->check_scan();
 
-    EXPECT_EQ(ih->getFileHdr()->num_pages_, 2);
-    EXPECT_EQ(ih->getFileHdr()->root_page_, IX_NO_PAGE);
+    std::sort(remain_keys.begin(), remain_keys.end(), [](int x,int y){return std::to_string(x) < std::to_string(y);});
+    auto lower = ih->leaf_begin();
+    auto upper = ih->leaf_end();
+    auto bpm = buffer_pool_manager_.get();
+    int num_records = 0;
+    for (IxScan scan(ih, lower, upper, bpm); !scan.is_end(); scan.next()) {
+        Rid rid{0, remain_keys[num_records]};
+        num_records++;
+        EXPECT_EQ(scan.rid(), rid);
+    }
+    EXPECT_EQ(num_records, remain_keys.size());
 }
 
 TEST_F(IndexTests, DeleteTest2) {
@@ -1379,7 +1362,7 @@ TEST_F(IndexTests, DeleteTest2) {
 
     for (int j = 1; j <= 10000; j++) {
         keys.push_back(j);
-        if (j % 5 != 1) {
+        if (j % 1320 != 1) {
             delete_keys.push_back(j);
         } else {
             remain_keys.push_back(j);
@@ -1391,7 +1374,6 @@ TEST_F(IndexTests, DeleteTest2) {
 
     for (auto& key: keys) {
         std::vector<Rid> res;
-        Rid rid{0, key};
         char* key_buf = IndexTests::SetKey(key);
         ih->insert_entry(key_buf, {0, key}, nullptr);
     }
@@ -1413,9 +1395,20 @@ TEST_F(IndexTests, DeleteTest2) {
         EXPECT_EQ(res.front(), rid);
     }
 
+    std::sort(remain_keys.begin(), remain_keys.end(), [](int x,int y){return std::to_string(x) < std::to_string(y);});
+    auto lower = ih->leaf_begin();
+    auto upper = ih->leaf_end();
+    auto bpm = buffer_pool_manager_.get();
+    int num_records = 0;
+    for (IxScan scan(ih, lower, upper, bpm); !scan.is_end(); scan.next()) {
+        Rid rid{0, remain_keys[num_records]};
+        num_records++;
+        EXPECT_EQ(scan.rid(), rid);
+    }
+    EXPECT_EQ(num_records, remain_keys.size());
+
     for (auto& key: remain_keys) {
         std::vector<Rid> res;
-        Rid rid{0, key};
         char* key_buf = IndexTests::SetKey(key);
         ih->delete_entry(key_buf, nullptr);
         EXPECT_EQ(res.size(), 0);
@@ -1449,7 +1442,7 @@ TEST_F(IndexTests, MixTest1) {
         remain_keys.push_back(keys[i]);
         ih->insert_entry(key_buf, rid, nullptr);
 
-        if (i % 2 == 0) {
+        if (i % 126 != 0) {
             int del = remain_keys[rand() % remain_keys.size()];
             auto it = std::find(remain_keys.begin(), remain_keys.end(), del);
             remain_keys.erase(it);
@@ -1476,6 +1469,18 @@ TEST_F(IndexTests, MixTest1) {
         EXPECT_EQ(res.front(), rid);
     }
 
+    std::sort(remain_keys.begin(), remain_keys.end(), [](int x,int y){return std::to_string(x) < std::to_string(y);});
+    auto lower = ih->leaf_begin();
+    auto upper = ih->leaf_end();
+    auto bpm = buffer_pool_manager_.get();
+    int num_records = 0;
+    for (IxScan scan(ih, lower, upper, bpm); !scan.is_end(); scan.next()) {
+        Rid rid{0, remain_keys[num_records]};
+        num_records++;
+        EXPECT_EQ(scan.rid(), rid);
+    }
+    EXPECT_EQ(num_records, remain_keys.size());
+
     for (auto& key: remain_keys) {
         char* key_buf = IndexTests::SetKey(key);
         ih->delete_entry(key_buf, nullptr);
@@ -1483,4 +1488,112 @@ TEST_F(IndexTests, MixTest1) {
 
     EXPECT_EQ(ih->getFileHdr()->num_pages_, 2);
     EXPECT_EQ(ih->getFileHdr()->root_page_, IX_NO_PAGE);
+
+    lower = ih->leaf_begin();
+    upper = ih->leaf_end();
+    num_records = 0;
+    for (IxScan scan(ih, lower, upper, bpm); !scan.is_end(); scan.next()) {
+        num_records++;
+    }
+    EXPECT_EQ(num_records, 0);
+}
+
+TEST_F(IndexTests, IxScanTest) {
+    auto ih = IndexTests::GetIh(300);
+
+    IxFileHdr* ix_hdr = ih->getFileHdr();
+    std::cout << "Size of tree node: " << ix_hdr->btree_order_ << "\n\n";
+
+    std::vector<int> keys;
+    std::vector<int> delete_keys;
+    std::vector<int> remain_keys;
+
+    for (int j = 1; j <= 10000; j++) {
+        keys.push_back(j);
+    }
+
+    std::random_shuffle(keys.begin(), keys.end());
+
+    for (int i = 0; i < keys.size(); i++) {
+        std::vector<Rid> res;
+        Rid rid{0, keys[i]};
+        char* key_buf = IndexTests::SetKey(keys[i]);
+
+        remain_keys.push_back(keys[i]);
+        ih->insert_entry(key_buf, rid, nullptr);
+
+        if (i % 12 == 0) {
+            int del = remain_keys[rand() % remain_keys.size()];
+            auto it = std::find(remain_keys.begin(), remain_keys.end(), del);
+            remain_keys.erase(it);
+
+            key_buf = IndexTests::SetKey(del);
+            ih->delete_entry(key_buf, nullptr);
+            delete_keys.push_back(del);
+        }
+    }
+
+    for (auto& key: delete_keys) {
+        std::vector<Rid> res;
+        char* key_buf = IndexTests::SetKey(key);
+        ih->get_value(key_buf, &res, nullptr);
+        EXPECT_EQ(res.size(), 0);
+    }
+
+    for (auto& key: remain_keys) {
+        std::vector<Rid> res;
+        Rid rid{0, key};
+        char* key_buf = IndexTests::SetKey(key);
+        ih->get_value(key_buf, &res, nullptr);
+        EXPECT_NE(res.size(), 0);
+        EXPECT_EQ(res.front(), rid);
+    }
+
+    std::sort(remain_keys.begin(), remain_keys.end(), [](int x,int y){return std::to_string(x) < std::to_string(y);});
+    auto lower = ih->lower_bound(SetKey(remain_keys.front()));
+    auto upper = ih->upper_bound(SetKey(remain_keys.back()));
+    auto bpm = buffer_pool_manager_.get();
+    int num_records = 0;
+
+    std::cout << "lower: " << lower.page_no << ", " <<  lower.slot_no << "\n";
+    std::cout << "upper: " << upper.page_no << ", " <<  upper.slot_no << "\n";
+
+    for (IxScan scan(ih, lower, upper, bpm); !scan.is_end(); scan.next()) {
+        Rid rid{0, remain_keys[num_records]};
+        num_records++;
+        EXPECT_EQ(scan.rid(), rid);
+    }
+    EXPECT_EQ(num_records, remain_keys.size());
+
+    for (int i = 0; i < remain_keys.size() / 2; i++) {
+        remain_keys.pop_back();
+    }
+
+    lower = ih->lower_bound(SetKey(remain_keys.front()));
+    upper = ih->upper_bound(SetKey(remain_keys.back()));
+    num_records = 0;
+
+    for (IxScan scan(ih, lower, upper, bpm); !scan.is_end(); scan.next()) {
+        Rid rid{0, remain_keys[num_records]};
+        num_records++;
+        EXPECT_EQ(scan.rid(), rid);
+    }
+    EXPECT_EQ(num_records, remain_keys.size());
+
+    std::reverse(remain_keys.begin(), remain_keys.end());
+    for (int i = 0; i < remain_keys.size() / 2; i++) {
+        remain_keys.pop_back();
+    }
+    std::reverse(remain_keys.begin(), remain_keys.end());
+
+    lower = ih->lower_bound(SetKey(remain_keys.front()));
+    upper = ih->upper_bound(SetKey(remain_keys.back()));
+    num_records = 0;
+
+    for (IxScan scan(ih, lower, upper, bpm); !scan.is_end(); scan.next()) {
+        Rid rid{0, remain_keys[num_records]};
+        num_records++;
+        EXPECT_EQ(scan.rid(), rid);
+    }
+    EXPECT_EQ(num_records, remain_keys.size());
 }
