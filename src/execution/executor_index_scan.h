@@ -31,6 +31,7 @@ class IndexScanExecutor : public AbstractExecutor {
 
     Rid rid_;
     std::unique_ptr<RecScan> scan_;
+    std::unique_ptr<IxScan> ix_scan_;
 
     SmManager *sm_manager_;
 
@@ -65,16 +66,193 @@ class IndexScanExecutor : public AbstractExecutor {
     }
 
     void beginTuple() override {
-        
+        Iid lower, upper;
+        auto ix_name = sm_manager_->get_ix_manager()->get_index_name(tab_name_, index_col_names_);
+        auto ih = sm_manager_->ihs_.at(ix_name).get();
+        auto bpm = sm_manager_->get_bpm();
+
+        ShowCondition();
+        GetBound(&lower, &upper, ih);
+        std::fstream outfile;
+        outfile.open("output.txt", std::ios::out | std::ios::app);
+        outfile << ih->leaf_begin().page_no << ", " << ih->leaf_end().page_no << ", " << ih->leaf_end().slot_no << ", ";
+        outfile << "(" << lower.page_no << "," << lower.slot_no << "), ";
+        outfile << "(" << upper.page_no << "," << upper.slot_no << ")\n";
+        ix_scan_ = std::make_unique<IxScan>(ih, lower, upper, bpm);
     }
 
     void nextTuple() override {
-        
+        ix_scan_->next();
     }
 
     std::unique_ptr<RmRecord> Next() override {
-        return nullptr;
+        Rid rid = ix_scan_->rid();
+        return sm_manager_->fhs_.at(tab_name_)->get_record(rid, nullptr);
     }
 
+    bool is_end() const override { return ix_scan_->is_end(); };
+
+    size_t tupleLen() const override { return len_; };
+
+    const std::vector<ColMeta> &cols() const override {
+        return cols_;
+    };
+
     Rid &rid() override { return rid_; }
+
+private:
+    auto Op2str(CompOp op) -> std::string {
+        std::map<CompOp, std::string> swap_op = {
+                {OP_EQ, "="}, {OP_NE, "!="}, {OP_LT, ">"}, {OP_GT, "<"}, {OP_LE, ">="}, {OP_GE, "<="},
+        };
+        return swap_op.at(op);
+    }
+
+    void ShowCondition() {
+        std::fstream outfile;
+        outfile.open("output.txt", std::ios::out | std::ios::app);
+
+        outfile << "\nUse Index: ";
+        std::cout << "Use Index: ";
+        for (auto& index_col_name : index_col_names_) {
+            std::cout << index_col_name << " ";
+            outfile << index_col_name << " ";
+        }
+        std::cout << "\n";
+        outfile << "\n";
+        outfile.close();
+
+        for (auto& cond: conds_) {
+            std::cout << cond.lhs_col.col_name << Op2str(cond.op);
+            if (cond.is_rhs_val) {
+                switch (cond.rhs_val.type) {
+                    case TYPE_INT:
+                        std::cout << cond.rhs_val.int_val;
+                        break;
+                    case TYPE_FLOAT:
+                        std::cout << cond.rhs_val.float_val;
+                        break;
+                    case TYPE_STRING:
+                        std::cout << cond.rhs_val.str_val;
+                        break;
+                    default:
+                        break;
+                }
+            } else {
+                std::cout << cond.rhs_col.col_name;
+            }
+            std::cout << ",  ";
+        }
+        std::cout << "\n";
+    }
+
+    void GetBound(Iid* lower, Iid* upper, IxIndexHandle* ih) {
+        if (conds_.size() == 1) {
+            GetBoundSingle(lower, upper, ih);
+            return ;
+        }
+
+        if (conds_.size() == 2) {
+            if (conds_[0].lhs_col.col_name == conds_[1].lhs_col.col_name) {
+                GetBoundSingle(lower, upper, ih);
+                return ;
+            }
+        }
+
+        GetBoundMultiple(lower, upper, ih);
+    }
+
+    void GetBoundMultiple(Iid* lower, Iid* upper, IxIndexHandle* ih) {
+        int key_size = index_meta_.col_tot_len;
+        auto tab_meta = sm_manager_->db_.get_table(tab_name_);
+        char* key = new char[key_size];
+        memset(key, 0, key_size);
+        int i = 0;
+        int offset = 0;
+        int num_key = static_cast<int>(conds_.size());
+
+        for (auto& cond: conds_) {
+            int col_len = tab_meta.get_col(cond.lhs_col.col_name)->len;
+            memcpy(key + offset, cond.rhs_val.raw->data, col_len);
+
+            if (i == num_key - 1) {
+                switch (cond.op) {
+                    case OP_GT:
+                        *lower = ih->upper_bound(key, num_key);
+                        *upper = ih->leaf_end();
+                        break;
+                    case OP_GE:
+                        *lower = ih->lower_bound(key, num_key);
+                        *upper = ih->leaf_end();
+                        break;
+                    case OP_LT:
+                        *lower = ih->leaf_begin();
+                        *upper = ih->lower_bound(key, num_key);
+                        break;
+                    case OP_LE:
+                        *lower = ih->leaf_begin();
+                        *upper = ih->upper_bound(key, num_key);
+                        break;
+                    case OP_EQ:
+                        *lower = ih->lower_bound(key, num_key);
+                        *upper = ih->upper_bound(key, num_key);
+                    default:
+                        break;
+                }
+            }
+
+            offset += col_len;
+            i++;
+        }
+    }
+
+    void GetBoundSingle(Iid* lower, Iid* upper, IxIndexHandle* ih) {
+        int key_size = index_meta_.col_tot_len;
+        auto tab_meta = sm_manager_->db_.get_table(tab_name_);
+        char* key = new char[key_size];
+        int num_key = 1;
+
+        if (conds_.size() == 1) {
+            auto cond = conds_[0];
+            int col_len = tab_meta.get_col(cond.lhs_col.col_name)->len;
+
+            memset(key, 0, key_size);
+            memcpy(key, cond.rhs_val.raw->data, col_len);
+
+            if (cond.op == OP_EQ) {
+                *lower = ih->lower_bound(key, num_key);
+                *upper = ih->upper_bound(key, num_key);
+            } else if (cond.op == OP_LE) {
+                *lower = ih->leaf_begin();
+                *upper = ih->upper_bound(key, num_key);
+            } else if (cond.op == OP_LT) {
+                *lower = ih->leaf_begin();
+                *upper = ih->lower_bound(key, num_key);
+            } else if (cond.op == OP_GE) {
+                *lower = ih->lower_bound(key, num_key);
+                *upper = ih->leaf_end();
+            } else if (cond.op == OP_GT) {
+                *lower = ih->upper_bound(key, num_key);
+                *upper = ih->leaf_end();
+            }
+        } else {
+            for (auto& cond: conds_) {
+                int col_len = tab_meta.get_col(cond.lhs_col.col_name)->len;
+                memset(key, 0, key_size);
+                memcpy(key, cond.rhs_val.raw->data, col_len);
+                switch (cond.op) {
+                    case OP_GT:
+                        *lower = ih->upper_bound(key, num_key); break;
+                    case OP_GE:
+                        *lower = ih->lower_bound(key, num_key); break;
+                    case OP_LT:
+                        *upper = ih->lower_bound(key, num_key); break;
+                    case OP_LE:
+                        *upper = ih->upper_bound(key, num_key); break;
+                    default:
+                        break;
+                }
+            }
+        }
+    }
 };
