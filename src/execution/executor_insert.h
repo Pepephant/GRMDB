@@ -57,10 +57,9 @@ class InsertExecutor : public AbstractExecutor {
             auto& index = tab_.indexes[i];
             auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
             char* key = new char[index.col_tot_len];
-            int offset = 0;
             for(size_t i = 0; i < index.col_num; ++i) {
-                memcpy(key + offset, rec.data + index.cols[i].offset, index.cols[i].len);
-                offset += index.cols[i].len;
+                auto offset = tab_.get_col(index.cols[i].name)->offset;
+                memcpy(key + index.cols[i].offset, rec.data + offset, index.cols[i].len);
             }
             ih->insert_entry(key, rid_, context_->txn_);
         }

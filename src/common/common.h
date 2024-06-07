@@ -15,6 +15,7 @@ See the Mulan PSL v2 for more details. */
 #include <memory>
 #include <string>
 #include <vector>
+#include <cfloat>
 #include "defs.h"
 #include "record/rm_defs.h"
 
@@ -69,6 +70,41 @@ struct Value {
             memset(raw->data, 0, len);
             memcpy(raw->data, str_val.c_str(), str_val.size());
         }
+    }
+
+    void generate_max(ColType type, int len) {
+        switch (type) {
+            case TYPE_INT:
+                int_val = INT32_MAX;
+                break;
+            case TYPE_FLOAT:
+                float_val = FLT_MAX;
+                break;
+            case TYPE_STRING:
+                str_val.resize(0);
+                str_val.resize(len, 126); // 最大的可打印字符
+                break;
+            default:
+                break;
+        }
+        init_raw(len);
+    }
+
+    void generate_min(ColType type, int len) {
+        switch (type) {
+            case TYPE_INT:
+                int_val = INT32_MIN;
+                break;
+            case TYPE_FLOAT:
+                float_val = FLT_MIN;
+                break;
+            case TYPE_STRING:
+                str_val = "";
+                break;
+            default:
+                break;
+        }
+        init_raw(len);
     }
 };
 
