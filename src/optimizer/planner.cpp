@@ -23,15 +23,32 @@ See the Mulan PSL v2 for more details. */
 #include "record_printer.h"
 
 // 目前的索引匹配规则为：完全匹配索引字段，且全部为单点查询，不会自动调整where条件的顺序
-bool Planner::get_index_cols(std::string tab_name, std::vector<Condition> curr_conds, std::vector<std::string>& index_col_names) {
+bool Planner::get_index_cols(std::string tab_name, std::vector<Condition>& curr_conds, std::vector<std::string>& index_col_names) {
     index_col_names.clear();
     for(auto& cond: curr_conds) {
-        if(cond.is_rhs_val && cond.op == OP_EQ && cond.lhs_col.tab_name.compare(tab_name) == 0)
-            index_col_names.push_back(cond.lhs_col.col_name);
+        if(!cond.is_rhs_val || cond.lhs_col.tab_name != tab_name || cond.op == OP_NE)
+            return false;
     }
+
+    if (curr_conds.empty()) {
+        return false;
+    }
+
+    // 判断单列索引
     TabMeta& tab = sm_manager_->db_.get_table(tab_name);
-    if(tab.is_index(index_col_names)) return true;
-    return false;
+    if (curr_conds.size() == 1) {
+        return tab.MatchIndexSingle(curr_conds, index_col_names);
+    }
+
+    // 判断单列索引（范围查询索引）
+    if (curr_conds.size() == 2) {
+        if (curr_conds[0].lhs_col.col_name == curr_conds[1].lhs_col.col_name) {
+            return tab.MatchIndexSingle(curr_conds, index_col_names);
+        }
+    }
+
+    index_col_names = tab.MatchIndexMultiple(curr_conds);
+    return !index_col_names.empty();
 }
 
 /**
