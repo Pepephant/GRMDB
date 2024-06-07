@@ -11,6 +11,7 @@ See the Mulan PSL v2 for more details. */
 #include "ix_index_handle.h"
 
 #include "ix_scan.h"
+#include "common/common.h"
 
 /**
  * @brief 在当前node中查找第一个>=target的key_idx
@@ -844,6 +845,46 @@ Iid IxIndexHandle::upper_bound(const char *key) {
     unpin_node_page(leaf_node, false);
 
     return iid;
+}
+
+Iid IxIndexHandle::lower_bound(const char *key, int size) {
+    if (size == file_hdr_->col_num_) {
+        return lower_bound(key);
+    }
+
+    int offset = 0;
+    for (int i = 0; i < size; i++) {
+        offset += file_hdr_->col_lens_[i];
+    }
+    char* new_key = new char [file_hdr_->col_tot_len_];
+    memcpy(new_key, key, offset);
+    for (int i = size; i < file_hdr_->col_num_; i++) {
+        Value min_val;
+        int col_len = file_hdr_->col_lens_[i];
+        min_val.generate_min(file_hdr_->col_types_[i], col_len);
+        memcpy(new_key + offset, min_val.raw->data, col_len);
+    }
+    return lower_bound(new_key);
+}
+
+Iid IxIndexHandle::upper_bound(const char *key, int size) {
+    if (size == file_hdr_->col_num_) {
+        return upper_bound(key);
+    }
+
+    int offset = 0;
+    for (int i = 0; i < size; i++) {
+        offset += file_hdr_->col_lens_[i];
+    }
+    char* new_key = new char [file_hdr_->col_tot_len_];
+    memcpy(new_key, key, offset);
+    for (int i = size; i < file_hdr_->col_num_; i++) {
+        Value max_val;
+        int col_len = file_hdr_->col_lens_[i];
+        max_val.generate_max(file_hdr_->col_types_[i], col_len);
+        memcpy(new_key + offset, max_val.raw->data, col_len);
+    }
+    return upper_bound(new_key);
 }
 
 /**

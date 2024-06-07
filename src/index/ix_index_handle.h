@@ -229,6 +229,10 @@ class IxIndexHandle {
 
     Iid upper_bound(const char *key);
 
+    Iid lower_bound(const char *key, int size);
+
+    Iid upper_bound(const char *key, int size);
+
     Iid leaf_end() const;
 
     Iid leaf_begin() const;
