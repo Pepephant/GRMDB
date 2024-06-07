@@ -15,9 +15,11 @@ See the Mulan PSL v2 for more details. */
 #include <map>
 #include <string>
 #include <vector>
+#include <set>
 
 #include "errors.h"
 #include "sm_defs.h"
+#include "common/common.h"
 
 /* 字段元数据 */
 struct ColMeta {
@@ -63,6 +65,34 @@ struct IndexMeta {
         }
         return is;
     }
+
+    bool MatchIndex(std::vector<Condition>& conditions) {
+        std::vector<Condition> new_conds;
+
+        for (auto& col: cols) {
+            auto counts = std::count_if(conditions.begin(), conditions.end(),
+                          [&col](Condition& cond) { return cond.lhs_col.col_name == col.name; });
+
+            if (counts != 1) {
+                break;
+            }
+
+            auto it = std::find_if(conditions.begin(), conditions.end(),
+                          [&col](Condition& cond) { return cond.lhs_col.col_name == col.name; });
+
+            new_conds.push_back(*it);
+
+            if (it->op != OP_EQ) {
+                break;
+            }
+        }
+
+        if (new_conds.size() == conditions.size()) {
+            conditions = new_conds;
+            return true;
+        }
+        return false;
+    }
 };
 
 /* 表元数据 */
@@ -98,6 +128,49 @@ struct TabMeta {
         }
 
         return false;
+    }
+
+    bool MatchIndexSingle(const std::vector<Condition>& conditions, std::vector<std::string>& index_col_names) {
+        if (conditions.size() == 1) {
+            index_col_names.push_back(conditions[0].lhs_col.col_name);
+            return is_index(index_col_names);
+        }
+
+        std::set<std::pair<CompOp, CompOp>> valid_set = {{OP_LE, OP_GE}, {OP_LE, OP_GT},
+        {OP_LT, OP_GE}, {OP_LT, OP_GT}, {OP_GE, OP_LE}, {OP_GE, OP_LT}, {OP_GT, OP_LT}, {OP_GT, OP_LE}};
+
+        if (conditions.size() == 2) {
+            auto op_pairs = std::make_pair(conditions[0].op, conditions[1].op);
+
+            if (valid_set.find(op_pairs) != valid_set.end()) {
+                index_col_names.push_back(conditions[0].lhs_col.col_name);
+                return is_index(index_col_names);
+            }
+            return false;
+        }
+
+        return false;
+    }
+
+    std::vector<std::string> MatchIndexMultiple(std::vector<Condition>& conditions) {
+        int max_match_num = IX_MAX_COL_LEN + 1;
+        std::vector<std::string> result;
+        result.clear();
+        IndexMeta meta;
+
+        for (auto& index: indexes) {
+            if (index.col_num < max_match_num && index.MatchIndex(conditions)) {
+                max_match_num = index.col_num;
+                meta = index;
+            }
+        }
+
+        if (max_match_num != IX_MAX_COL_LEN + 1) {
+            for (auto& col: meta.cols) {
+                result.push_back(col.name);
+            }
+        }
+        return result;
     }
 
     /* 根据字段名称集合获取索引元数据 */
