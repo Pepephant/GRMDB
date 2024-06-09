@@ -87,6 +87,7 @@ class IxManager {
             fhdr->col_lens_.push_back(index_cols[i].len);
         }
         fhdr->update_tot_len();
+        fhdr->root_page_ = IX_NO_PAGE;
         
         char* data = new char[fhdr->tot_len_];
         fhdr->serialize(data);

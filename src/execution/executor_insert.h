@@ -61,7 +61,12 @@ class InsertExecutor : public AbstractExecutor {
                 auto offset = tab_.get_col(index.cols[i].name)->offset;
                 memcpy(key + index.cols[i].offset, rec.data + offset, index.cols[i].len);
             }
-            ih->insert_entry(key, rid_, context_->txn_);
+            try {
+                ih->insert_entry(key, rid_, context_->txn_);
+            } catch (IndexEntryExistsError error) {
+                fh_->delete_record(rid_, context_);
+                throw ;
+            }
         }
         return nullptr;
     }

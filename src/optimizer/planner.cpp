@@ -30,12 +30,18 @@ bool Planner::get_index_cols(std::string tab_name, std::vector<Condition>& curr_
             return false;
     }
 
+    TabMeta& tab = sm_manager_->db_.get_table(tab_name);
     if (curr_conds.empty()) {
-        return false;
+        if (tab.indexes.empty()) {
+            return false;
+        }
+        for (auto& col: tab.indexes[0].cols) {
+            index_col_names.push_back(col.name);
+        }
+        return true;
     }
 
     // 判断单列索引
-    TabMeta& tab = sm_manager_->db_.get_table(tab_name);
     if (curr_conds.size() == 1) {
         return tab.MatchIndexSingle(curr_conds, index_col_names);
     }

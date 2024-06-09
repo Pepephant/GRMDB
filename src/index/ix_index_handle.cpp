@@ -191,6 +191,7 @@ int IxNodeHandle::insert(const char *key, const Rid &value) {
         pos = get_size();
     } else {
         if (memcmp(get_key(pos), key, key_size) == 0) {
+            throw IndexEntryExistsError();
             return page_hdr->num_key;
         }
     }
@@ -266,15 +267,6 @@ IxIndexHandle::IxIndexHandle(DiskManager *disk_manager, BufferPoolManager *buffe
     disk_manager_->read_page(fd, IX_FILE_HDR_PAGE, buf, PAGE_SIZE);
     file_hdr_ = new IxFileHdr();
     file_hdr_->deserialize(buf);
-
-    auto root_node = fetch_node(file_hdr_->root_page_);
-    file_hdr_->first_leaf_ = file_hdr_->root_page_;
-    file_hdr_->last_leaf_ = file_hdr_->root_page_;
-    root_node->page_hdr->is_leaf = true;
-    root_node->page_hdr->parent = IX_NO_PAGE;
-    root_node->page_hdr->next_leaf = file_hdr_->root_page_;
-    root_node->page_hdr->prev_leaf = file_hdr_->root_page_;
-    unpin_node_page(root_node, true);
     
     // disk_manager管理的fd对应的文件中，设置从file_hdr_->num_pages开始分配page_no
     int now_page_no = disk_manager_->get_fd2pageno(fd);

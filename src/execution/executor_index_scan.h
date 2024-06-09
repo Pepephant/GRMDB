@@ -79,15 +79,18 @@ class IndexScanExecutor : public AbstractExecutor {
         outfile << "(" << lower.page_no << "," << lower.slot_no << "), ";
         outfile << "(" << upper.page_no << "," << upper.slot_no << ")\n";
         ix_scan_ = std::make_unique<IxScan>(ih, lower, upper, bpm);
+        rid_ = ix_scan_->rid();
     }
 
     void nextTuple() override {
         ix_scan_->next();
+        if (!ix_scan_->is_end()) {
+            rid_ = ix_scan_->rid();
+        }
     }
 
     std::unique_ptr<RmRecord> Next() override {
-        Rid rid = ix_scan_->rid();
-        return sm_manager_->fhs_.at(tab_name_)->get_record(rid, nullptr);
+        return sm_manager_->fhs_.at(tab_name_)->get_record(rid_, nullptr);
     }
 
     bool is_end() const override { return ix_scan_->is_end(); };
@@ -147,6 +150,11 @@ private:
     }
 
     void GetBound(Iid* lower, Iid* upper, IxIndexHandle* ih) {
+        if (conds_.size() == 0) {
+            *lower = ih->leaf_begin();
+            *upper = ih->leaf_end();
+        }
+
         if (conds_.size() == 1) {
             GetBoundSingle(lower, upper, ih);
             return ;

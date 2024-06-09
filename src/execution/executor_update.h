@@ -45,7 +45,8 @@ class UpdateExecutor : public AbstractExecutor {
         cols_ = tab_.cols;
         for (auto& rid: rids_) {
             auto tuple = fh_->get_record(rid, context_);
-            RmRecord rec = *(tuple);
+            RmRecord old_rec = *(tuple);
+            RmRecord new_rec = *(tuple);
 
             if (!eval_condition(conds_, tuple.get())) {
                 continue;
@@ -58,10 +59,28 @@ class UpdateExecutor : public AbstractExecutor {
                 });
                 auto offset = col_meta->offset;
                 new_val.init_raw(col_meta->len);
-                memcpy(rec.data + offset, new_val.raw->data, col_meta->len);
+                memcpy(new_rec.data + offset, new_val.raw->data, col_meta->len);
             }
 
-            fh_->update_record(rid, rec.data, context_);
+            // update the index
+            for(size_t i = 0; i < tab_.indexes.size(); ++i) {
+                auto& index = tab_.indexes[i];
+                auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
+                char* old_key = new char[index.col_tot_len];
+                char* new_key = new char[index.col_tot_len];
+                for(size_t i = 0; i < index.col_num; ++i) {
+                    auto offset = tab_.get_col(index.cols[i].name)->offset;
+                    memcpy(old_key + index.cols[i].offset, old_rec.data + offset, index.cols[i].len);
+                }
+                for(size_t i = 0; i < index.col_num; ++i) {
+                    auto offset = tab_.get_col(index.cols[i].name)->offset;
+                    memcpy(new_key + index.cols[i].offset, new_rec.data + offset, index.cols[i].len);
+                }
+                ih->insert_entry(new_key, rid, context_->txn_);
+                ih->delete_entry(old_key, context_->txn_);
+            }
+
+            fh_->update_record(rid, new_rec.data, context_);
         }
         return nullptr;
     }
