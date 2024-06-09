@@ -293,6 +293,21 @@ void SmManager::create_index(const std::string& tab_name, const std::vector<std:
     new_meta.col_tot_len = cur_offset;
     tab_meta.indexes.push_back(new_meta);
 
+    // 填充索引内容
+    auto fh = fhs_.at(tab_name).get();
+    auto ih = ihs_.at(ix_name).get();
+
+    for (RmScan scan(fh); !scan.is_end(); scan.next()) {
+        auto rid = scan.rid();
+        auto rec = fh->get_record(rid, context);
+        char* key = new char[new_meta.col_tot_len];
+        for(size_t i = 0; i < new_meta.col_num; ++i) {
+            auto offset = tab_meta.get_col(new_meta.cols[i].name)->offset;
+            memcpy(key + new_meta.cols[i].offset, rec->data + offset, new_meta.cols[i].len);
+        }
+        ih->insert_entry(key, rid, context->txn_);
+    }
+
     flush_meta();
 }
 
