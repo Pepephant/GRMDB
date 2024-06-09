@@ -46,6 +46,18 @@ class DeleteExecutor : public AbstractExecutor {
             if (eval_condition(conds_, tuple.get())) {
                 fh_->delete_record(rid, context_);
             }
+
+            RmRecord old_rec = *(tuple);
+
+            for(auto& index: tab_.indexes) {
+                auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
+                char* old_key = new char[index.col_tot_len];
+                for(size_t i = 0; i < index.col_num; ++i) {
+                    auto offset = tab_.get_col(index.cols[i].name)->offset;
+                    memcpy(old_key + index.cols[i].offset, old_rec.data + offset, index.cols[i].len);
+                }
+                ih->delete_entry(old_key, context_->txn_);
+            }
         }
         return nullptr;
     }

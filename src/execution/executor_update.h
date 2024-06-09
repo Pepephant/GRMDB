@@ -63,8 +63,7 @@ class UpdateExecutor : public AbstractExecutor {
             }
 
             // update the index
-            for(size_t i = 0; i < tab_.indexes.size(); ++i) {
-                auto& index = tab_.indexes[i];
+            for(auto& index: tab_.indexes) {
                 auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
                 char* old_key = new char[index.col_tot_len];
                 char* new_key = new char[index.col_tot_len];
