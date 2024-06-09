@@ -71,13 +71,7 @@ class IndexScanExecutor : public AbstractExecutor {
         auto ih = sm_manager_->ihs_.at(ix_name).get();
         auto bpm = sm_manager_->get_bpm();
 
-        ShowCondition();
         GetBound(&lower, &upper, ih);
-        std::fstream outfile;
-        outfile.open("output.txt", std::ios::out | std::ios::app);
-        outfile << ih->leaf_begin().page_no << ", " << ih->leaf_end().page_no << ", " << ih->leaf_end().slot_no << ", ";
-        outfile << "(" << lower.page_no << "," << lower.slot_no << "), ";
-        outfile << "(" << upper.page_no << "," << upper.slot_no << ")\n";
         ix_scan_ = std::make_unique<IxScan>(ih, lower, upper, bpm);
         rid_ = ix_scan_->rid();
     }
