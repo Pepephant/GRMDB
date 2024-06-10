@@ -801,7 +801,12 @@ Iid IxIndexHandle::lower_bound(const char *key) {
 
     if (index == -1) {
         iid.page_no = leaf_node->get_page_no();
-        iid.slot_no = leaf_node->get_size();
+        if (iid.page_no == file_hdr_->last_leaf_) {
+            iid.slot_no = leaf_node->get_size();
+        } else {
+            iid.page_no = leaf_node->get_next_leaf();
+            iid.slot_no = 0;
+        }
     } else {
         iid.page_no = leaf_node->get_page_no();
         iid.slot_no = index;
@@ -828,7 +833,12 @@ Iid IxIndexHandle::upper_bound(const char *key) {
 
     if (index == -1) {
         iid.page_no = leaf_node->get_page_no();
-        iid.slot_no = leaf_node->get_size();
+        if (iid.page_no == file_hdr_->last_leaf_) {
+            iid.slot_no = leaf_node->get_size();
+        } else {
+            iid.page_no = leaf_node->get_next_leaf();
+            iid.slot_no = 0;
+        }
     } else {
         iid.page_no = leaf_node->get_page_no();
         iid.slot_no = index;
