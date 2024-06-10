@@ -1597,3 +1597,51 @@ TEST_F(IndexTests, IxScanTest) {
     }
     EXPECT_EQ(num_records, remain_keys.size());
 }
+
+TEST_F(IndexTests, IxScanTest1) {
+    auto ih = IndexTests::GetIh(10);
+
+    IxFileHdr* ix_hdr = ih->getFileHdr();
+    std::cout << "Size of tree node: " << ix_hdr->btree_order_ << "\n\n";
+
+    std::vector<int> keys;
+
+    for (int j = 1; j <= 3000; j++) {
+        keys.push_back(j);
+    }
+
+    for (auto& key: keys) {
+        std::vector<Rid> res;
+        Rid rid{0, key};
+        char* key_buf = IndexTests::SetKey(key);
+        ih->insert_entry(key_buf, rid, nullptr);
+    }
+
+    for (auto& key: keys) {
+        Rid rid = {.page_no = 0, .slot_no = key};
+        std::vector<Rid> res;
+        char* key_buf = IndexTests::SetKey(key);
+        ih->get_value(key_buf, &res, nullptr);
+        EXPECT_NE(res.size(), 0);
+        EXPECT_EQ(res.front(), rid);
+    }
+
+    // ih->show_tree();
+    // ih->check_scan();
+
+    auto bpm = buffer_pool_manager_.get();
+    for (auto& key: keys) {
+        auto lower = ih->lower_bound(SetKey(key));
+        auto upper = ih->upper_bound(SetKey(key));
+        int num_records = 0;
+        if (key == 20) {
+            std::cout << "Here";
+        }
+        for (IxScan scan(ih, lower, upper, bpm); !scan.is_end(); scan.next()) {
+            Rid rid{0, key};
+            num_records++;
+            EXPECT_EQ(scan.rid(), rid);
+        }
+        EXPECT_EQ(num_records, 1);
+    }
+}
