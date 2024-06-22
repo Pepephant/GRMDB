@@ -67,7 +67,7 @@
 
 
 /* First part of user prologue.  */
-#line 1 "yacc.y"
+#line 1 "/home/pepephant/GleamDB/src/parser/yacc.y"
 
 #include "ast.h"
 #include "yacc.tab.h"
@@ -82,7 +82,7 @@ void yyerror(YYLTYPE *locp, const char* s) {
 
 using namespace ast;
 
-#line 86 "yacc.tab.cpp"
+#line 86 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
 
 # ifndef YY_CAST
 #  ifdef __cplusplus
@@ -105,7 +105,7 @@ using namespace ast;
 #  endif
 # endif
 
-#include "yacc.tab.hpp"
+#include "yacc.tab.h"
 /* Symbol kind.  */
 enum yysymbol_kind_t
 {
@@ -1637,525 +1637,525 @@ yyreduce:
   switch (yyn)
     {
   case 2: /* start: stmt ';'  */
-#line 59 "yacc.y"
+#line 59 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         parse_tree = (yyvsp[-1].sv_node);
         YYACCEPT;
     }
-#line 1646 "yacc.tab.cpp"
+#line 1646 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 3: /* start: HELP  */
-#line 64 "yacc.y"
+#line 64 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         parse_tree = std::make_shared<Help>();
         YYACCEPT;
     }
-#line 1655 "yacc.tab.cpp"
+#line 1655 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 4: /* start: EXIT  */
-#line 69 "yacc.y"
+#line 69 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         parse_tree = nullptr;
         YYACCEPT;
     }
-#line 1664 "yacc.tab.cpp"
+#line 1664 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 5: /* start: T_EOF  */
-#line 74 "yacc.y"
+#line 74 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         parse_tree = nullptr;
         YYACCEPT;
     }
-#line 1673 "yacc.tab.cpp"
+#line 1673 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 11: /* txnStmt: TXN_BEGIN  */
-#line 90 "yacc.y"
+#line 90 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<TxnBegin>();
     }
-#line 1681 "yacc.tab.cpp"
+#line 1681 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 12: /* txnStmt: TXN_COMMIT  */
-#line 94 "yacc.y"
+#line 94 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<TxnCommit>();
     }
-#line 1689 "yacc.tab.cpp"
+#line 1689 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 13: /* txnStmt: TXN_ABORT  */
-#line 98 "yacc.y"
+#line 98 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<TxnAbort>();
     }
-#line 1697 "yacc.tab.cpp"
+#line 1697 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 14: /* txnStmt: TXN_ROLLBACK  */
-#line 102 "yacc.y"
+#line 102 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<TxnRollback>();
     }
-#line 1705 "yacc.tab.cpp"
+#line 1705 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 15: /* dbStmt: SHOW TABLES  */
-#line 109 "yacc.y"
+#line 109 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<ShowTables>();
     }
-#line 1713 "yacc.tab.cpp"
+#line 1713 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 16: /* dbStmt: SHOW INDEX FROM tbName  */
-#line 113 "yacc.y"
+#line 113 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<ShowIndex>((yyvsp[0].sv_str));
     }
-#line 1721 "yacc.tab.cpp"
+#line 1721 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 17: /* setStmt: SET set_knob_type '=' VALUE_BOOL  */
-#line 120 "yacc.y"
+#line 120 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<SetStmt>((yyvsp[-2].sv_setKnobType), (yyvsp[0].sv_bool));
     }
-#line 1729 "yacc.tab.cpp"
+#line 1729 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 18: /* ddl: CREATE TABLE tbName '(' fieldList ')'  */
-#line 127 "yacc.y"
+#line 127 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<CreateTable>((yyvsp[-3].sv_str), (yyvsp[-1].sv_fields));
     }
-#line 1737 "yacc.tab.cpp"
+#line 1737 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 19: /* ddl: DROP TABLE tbName  */
-#line 131 "yacc.y"
+#line 131 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<DropTable>((yyvsp[0].sv_str));
     }
-#line 1745 "yacc.tab.cpp"
+#line 1745 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 20: /* ddl: DESC tbName  */
-#line 135 "yacc.y"
+#line 135 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<DescTable>((yyvsp[0].sv_str));
     }
-#line 1753 "yacc.tab.cpp"
+#line 1753 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 21: /* ddl: CREATE INDEX tbName '(' colNameList ')'  */
-#line 139 "yacc.y"
+#line 139 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<CreateIndex>((yyvsp[-3].sv_str), (yyvsp[-1].sv_strs));
     }
-#line 1761 "yacc.tab.cpp"
+#line 1761 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 22: /* ddl: DROP INDEX tbName '(' colNameList ')'  */
-#line 143 "yacc.y"
+#line 143 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<DropIndex>((yyvsp[-3].sv_str), (yyvsp[-1].sv_strs));
     }
-#line 1769 "yacc.tab.cpp"
+#line 1769 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 23: /* dml: INSERT INTO tbName VALUES '(' valueList ')'  */
-#line 150 "yacc.y"
+#line 150 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<InsertStmt>((yyvsp[-4].sv_str), (yyvsp[-1].sv_vals));
     }
-#line 1777 "yacc.tab.cpp"
+#line 1777 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 24: /* dml: DELETE FROM tbName optWhereClause  */
-#line 154 "yacc.y"
+#line 154 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<DeleteStmt>((yyvsp[-1].sv_str), (yyvsp[0].sv_conds));
     }
-#line 1785 "yacc.tab.cpp"
+#line 1785 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 25: /* dml: UPDATE tbName SET setClauses optWhereClause  */
-#line 158 "yacc.y"
+#line 158 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<UpdateStmt>((yyvsp[-3].sv_str), (yyvsp[-1].sv_set_clauses), (yyvsp[0].sv_conds));
     }
-#line 1793 "yacc.tab.cpp"
+#line 1793 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 26: /* dml: SELECT selector FROM tableList optWhereClause opt_order_clause  */
-#line 162 "yacc.y"
+#line 162 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_node) = std::make_shared<SelectStmt>((yyvsp[-4].sv_cols), (yyvsp[-2].sv_strs), (yyvsp[-1].sv_conds), (yyvsp[0].sv_orderby));
     }
-#line 1801 "yacc.tab.cpp"
+#line 1801 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 27: /* fieldList: field  */
-#line 169 "yacc.y"
+#line 169 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_fields) = std::vector<std::shared_ptr<Field>>{(yyvsp[0].sv_field)};
     }
-#line 1809 "yacc.tab.cpp"
+#line 1809 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 28: /* fieldList: fieldList ',' field  */
-#line 173 "yacc.y"
+#line 173 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_fields).push_back((yyvsp[0].sv_field));
     }
-#line 1817 "yacc.tab.cpp"
+#line 1817 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 29: /* colNameList: colName  */
-#line 180 "yacc.y"
+#line 180 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_strs) = std::vector<std::string>{(yyvsp[0].sv_str)};
     }
-#line 1825 "yacc.tab.cpp"
+#line 1825 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 30: /* colNameList: colNameList ',' colName  */
-#line 184 "yacc.y"
+#line 184 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_strs).push_back((yyvsp[0].sv_str));
     }
-#line 1833 "yacc.tab.cpp"
+#line 1833 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 31: /* field: colName type  */
-#line 191 "yacc.y"
+#line 191 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_field) = std::make_shared<ColDef>((yyvsp[-1].sv_str), (yyvsp[0].sv_type_len));
     }
-#line 1841 "yacc.tab.cpp"
+#line 1841 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 32: /* type: INT  */
-#line 198 "yacc.y"
+#line 198 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_type_len) = std::make_shared<TypeLen>(SV_TYPE_INT, sizeof(int));
     }
-#line 1849 "yacc.tab.cpp"
+#line 1849 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 33: /* type: CHAR '(' VALUE_INT ')'  */
-#line 202 "yacc.y"
+#line 202 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_type_len) = std::make_shared<TypeLen>(SV_TYPE_STRING, (yyvsp[-1].sv_int));
     }
-#line 1857 "yacc.tab.cpp"
+#line 1857 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 34: /* type: FLOAT  */
-#line 206 "yacc.y"
+#line 206 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_type_len) = std::make_shared<TypeLen>(SV_TYPE_FLOAT, sizeof(float));
     }
-#line 1865 "yacc.tab.cpp"
+#line 1865 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 35: /* valueList: value  */
-#line 213 "yacc.y"
+#line 213 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_vals) = std::vector<std::shared_ptr<Value>>{(yyvsp[0].sv_val)};
     }
-#line 1873 "yacc.tab.cpp"
+#line 1873 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 36: /* valueList: valueList ',' value  */
-#line 217 "yacc.y"
+#line 217 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_vals).push_back((yyvsp[0].sv_val));
     }
-#line 1881 "yacc.tab.cpp"
+#line 1881 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 37: /* value: VALUE_INT  */
-#line 224 "yacc.y"
+#line 224 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_val) = std::make_shared<IntLit>((yyvsp[0].sv_int));
     }
-#line 1889 "yacc.tab.cpp"
+#line 1889 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 38: /* value: VALUE_FLOAT  */
-#line 228 "yacc.y"
+#line 228 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_val) = std::make_shared<FloatLit>((yyvsp[0].sv_float));
     }
-#line 1897 "yacc.tab.cpp"
+#line 1897 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 39: /* value: VALUE_STRING  */
-#line 232 "yacc.y"
+#line 232 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_val) = std::make_shared<StringLit>((yyvsp[0].sv_str));
     }
-#line 1905 "yacc.tab.cpp"
+#line 1905 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 40: /* value: VALUE_BOOL  */
-#line 236 "yacc.y"
+#line 236 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_val) = std::make_shared<BoolLit>((yyvsp[0].sv_bool));
     }
-#line 1913 "yacc.tab.cpp"
+#line 1913 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 41: /* condition: col op expr  */
-#line 243 "yacc.y"
+#line 243 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_cond) = std::make_shared<BinaryExpr>((yyvsp[-2].sv_col), (yyvsp[-1].sv_comp_op), (yyvsp[0].sv_expr));
     }
-#line 1921 "yacc.tab.cpp"
+#line 1921 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 42: /* optWhereClause: %empty  */
-#line 249 "yacc.y"
+#line 249 "/home/pepephant/GleamDB/src/parser/yacc.y"
                       { /* ignore*/ }
-#line 1927 "yacc.tab.cpp"
+#line 1927 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 43: /* optWhereClause: WHERE whereClause  */
-#line 251 "yacc.y"
+#line 251 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_conds) = (yyvsp[0].sv_conds);
     }
-#line 1935 "yacc.tab.cpp"
+#line 1935 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 44: /* whereClause: condition  */
-#line 258 "yacc.y"
+#line 258 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_conds) = std::vector<std::shared_ptr<BinaryExpr>>{(yyvsp[0].sv_cond)};
     }
-#line 1943 "yacc.tab.cpp"
+#line 1943 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 45: /* whereClause: whereClause AND condition  */
-#line 262 "yacc.y"
+#line 262 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_conds).push_back((yyvsp[0].sv_cond));
     }
-#line 1951 "yacc.tab.cpp"
+#line 1951 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 46: /* col: tbName '.' colName  */
-#line 269 "yacc.y"
+#line 269 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_col) = std::make_shared<Col>((yyvsp[-2].sv_str), (yyvsp[0].sv_str));
     }
-#line 1959 "yacc.tab.cpp"
+#line 1959 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 47: /* col: colName  */
-#line 273 "yacc.y"
+#line 273 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_col) = std::make_shared<Col>("", (yyvsp[0].sv_str));
     }
-#line 1967 "yacc.tab.cpp"
+#line 1967 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 48: /* colList: col  */
-#line 280 "yacc.y"
+#line 280 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_cols) = std::vector<std::shared_ptr<Col>>{(yyvsp[0].sv_col)};
     }
-#line 1975 "yacc.tab.cpp"
+#line 1975 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 49: /* colList: colList ',' col  */
-#line 284 "yacc.y"
+#line 284 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_cols).push_back((yyvsp[0].sv_col));
     }
-#line 1983 "yacc.tab.cpp"
+#line 1983 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 50: /* op: '='  */
-#line 291 "yacc.y"
+#line 291 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_comp_op) = SV_OP_EQ;
     }
-#line 1991 "yacc.tab.cpp"
+#line 1991 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 51: /* op: '<'  */
-#line 295 "yacc.y"
+#line 295 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_comp_op) = SV_OP_LT;
     }
-#line 1999 "yacc.tab.cpp"
+#line 1999 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 52: /* op: '>'  */
-#line 299 "yacc.y"
+#line 299 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_comp_op) = SV_OP_GT;
     }
-#line 2007 "yacc.tab.cpp"
+#line 2007 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 53: /* op: NEQ  */
-#line 303 "yacc.y"
+#line 303 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_comp_op) = SV_OP_NE;
     }
-#line 2015 "yacc.tab.cpp"
+#line 2015 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 54: /* op: LEQ  */
-#line 307 "yacc.y"
+#line 307 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_comp_op) = SV_OP_LE;
     }
-#line 2023 "yacc.tab.cpp"
+#line 2023 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 55: /* op: GEQ  */
-#line 311 "yacc.y"
+#line 311 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_comp_op) = SV_OP_GE;
     }
-#line 2031 "yacc.tab.cpp"
+#line 2031 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 56: /* expr: value  */
-#line 318 "yacc.y"
+#line 318 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_expr) = std::static_pointer_cast<Expr>((yyvsp[0].sv_val));
     }
-#line 2039 "yacc.tab.cpp"
+#line 2039 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 57: /* expr: col  */
-#line 322 "yacc.y"
+#line 322 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_expr) = std::static_pointer_cast<Expr>((yyvsp[0].sv_col));
     }
-#line 2047 "yacc.tab.cpp"
+#line 2047 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 58: /* setClauses: setClause  */
-#line 329 "yacc.y"
+#line 329 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_set_clauses) = std::vector<std::shared_ptr<SetClause>>{(yyvsp[0].sv_set_clause)};
     }
-#line 2055 "yacc.tab.cpp"
+#line 2055 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 59: /* setClauses: setClauses ',' setClause  */
-#line 333 "yacc.y"
+#line 333 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_set_clauses).push_back((yyvsp[0].sv_set_clause));
     }
-#line 2063 "yacc.tab.cpp"
+#line 2063 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 60: /* setClause: colName '=' value  */
-#line 340 "yacc.y"
+#line 340 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_set_clause) = std::make_shared<SetClause>((yyvsp[-2].sv_str), (yyvsp[0].sv_val));
     }
-#line 2071 "yacc.tab.cpp"
+#line 2071 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 61: /* selector: '*'  */
-#line 347 "yacc.y"
+#line 347 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_cols) = {};
     }
-#line 2079 "yacc.tab.cpp"
+#line 2079 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 63: /* tableList: tbName  */
-#line 355 "yacc.y"
+#line 355 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_strs) = std::vector<std::string>{(yyvsp[0].sv_str)};
     }
-#line 2087 "yacc.tab.cpp"
+#line 2087 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 64: /* tableList: tableList ',' tbName  */
-#line 359 "yacc.y"
+#line 359 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_strs).push_back((yyvsp[0].sv_str));
     }
-#line 2095 "yacc.tab.cpp"
+#line 2095 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 65: /* tableList: tableList JOIN tbName  */
-#line 363 "yacc.y"
+#line 363 "/home/pepephant/GleamDB/src/parser/yacc.y"
     {
         (yyval.sv_strs).push_back((yyvsp[0].sv_str));
     }
-#line 2103 "yacc.tab.cpp"
+#line 2103 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 66: /* opt_order_clause: ORDER BY order_clause  */
-#line 370 "yacc.y"
+#line 370 "/home/pepephant/GleamDB/src/parser/yacc.y"
     { 
         (yyval.sv_orderby) = (yyvsp[0].sv_orderby); 
     }
-#line 2111 "yacc.tab.cpp"
+#line 2111 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 67: /* opt_order_clause: %empty  */
-#line 373 "yacc.y"
+#line 373 "/home/pepephant/GleamDB/src/parser/yacc.y"
                       { /* ignore*/ }
-#line 2117 "yacc.tab.cpp"
+#line 2117 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 68: /* order_clause: col opt_asc_desc  */
-#line 378 "yacc.y"
+#line 378 "/home/pepephant/GleamDB/src/parser/yacc.y"
     { 
         (yyval.sv_orderby) = std::make_shared<OrderBy>((yyvsp[-1].sv_col), (yyvsp[0].sv_orderby_dir));
     }
-#line 2125 "yacc.tab.cpp"
+#line 2125 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 69: /* opt_asc_desc: ASC  */
-#line 384 "yacc.y"
+#line 384 "/home/pepephant/GleamDB/src/parser/yacc.y"
                  { (yyval.sv_orderby_dir) = OrderBy_ASC;     }
-#line 2131 "yacc.tab.cpp"
+#line 2131 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 70: /* opt_asc_desc: DESC  */
-#line 385 "yacc.y"
+#line 385 "/home/pepephant/GleamDB/src/parser/yacc.y"
                  { (yyval.sv_orderby_dir) = OrderBy_DESC;    }
-#line 2137 "yacc.tab.cpp"
+#line 2137 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 71: /* opt_asc_desc: %empty  */
-#line 386 "yacc.y"
+#line 386 "/home/pepephant/GleamDB/src/parser/yacc.y"
             { (yyval.sv_orderby_dir) = OrderBy_DEFAULT; }
-#line 2143 "yacc.tab.cpp"
+#line 2143 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 72: /* set_knob_type: ENABLE_NESTLOOP  */
-#line 390 "yacc.y"
+#line 390 "/home/pepephant/GleamDB/src/parser/yacc.y"
                     { (yyval.sv_setKnobType) = EnableNestLoop; }
-#line 2149 "yacc.tab.cpp"
+#line 2149 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
   case 73: /* set_knob_type: ENABLE_SORTMERGE  */
-#line 391 "yacc.y"
+#line 391 "/home/pepephant/GleamDB/src/parser/yacc.y"
                          { (yyval.sv_setKnobType) = EnableSortMerge; }
-#line 2155 "yacc.tab.cpp"
+#line 2155 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
     break;
 
 
-#line 2159 "yacc.tab.cpp"
+#line 2159 "/home/pepephant/GleamDB/src/parser/yacc.tab.cpp"
 
       default: break;
     }
@@ -2384,5 +2384,5 @@ yyreturnlab:
   return yyresult;
 }
 
-#line 397 "yacc.y"
+#line 397 "/home/pepephant/GleamDB/src/parser/yacc.y"
 
