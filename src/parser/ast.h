@@ -9,9 +9,13 @@ MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 #pragma once
 
+#include <utility>
 #include <vector>
 #include <string>
 #include <memory>
+#include <cassert>
+
+#include "errors.h"
 
 enum JoinType {
     INNER_JOIN, LEFT_JOIN, RIGHT_JOIN, FULL_JOIN
@@ -34,6 +38,11 @@ enum OrderByDir {
 
 enum SetKnobType {
     EnableNestLoop, EnableSortMerge
+};
+
+enum AggrType {
+    AGG_NO_OP, AGG_SUM, AGG_MAX, AGG_MIN, AGG_COUNT, AGG_COUNT_STAR,
+    NON_AGG_ALL // 表示*
 };
 
 // Base class for tree nodes
@@ -167,11 +176,15 @@ struct SetClause : public TreeNode {
 
 struct BinaryExpr : public TreeNode {
     std::shared_ptr<Col> lhs;
+    bool in_clause;
     SvCompOp op;
     std::shared_ptr<Expr> rhs;
 
     BinaryExpr(std::shared_ptr<Col> lhs_, SvCompOp op_, std::shared_ptr<Expr> rhs_) :
-            lhs(std::move(lhs_)), op(op_), rhs(std::move(rhs_)) {}
+            lhs(std::move(lhs_)), op(op_), rhs(std::move(rhs_)) { in_clause = false; };
+
+    BinaryExpr(std::shared_ptr<Col> lhs_, std::shared_ptr<Expr> rhs_) :
+            lhs(std::move(lhs_)), rhs(std::move(rhs_)) { in_clause = true; op = {}; };
 };
 
 struct OrderBy : public TreeNode
@@ -220,26 +233,102 @@ struct JoinExpr : public TreeNode {
             left(std::move(left_)), right(std::move(right_)), conds(std::move(conds_)), type(type_) {}
 };
 
-struct SelectStmt : public TreeNode {
-    std::vector<std::shared_ptr<Col>> cols;
-    std::vector<std::string> tabs;
-    std::vector<std::shared_ptr<BinaryExpr>> conds;
-    std::vector<std::shared_ptr<JoinExpr>> jointree;
+struct AggCol: public TreeNode {
+    std::shared_ptr<Col> column_{nullptr};
+    AggrType agg_type_;
+    bool has_alias_{false};
+    std::string alias_;
 
-    
-    bool has_sort;
-    std::shared_ptr<OrderBy> order;
+    explicit AggCol(AggrType aggrType) :
+            agg_type_(aggrType) {
+        assert(agg_type_ == AGG_COUNT_STAR || agg_type_ == NON_AGG_ALL);
+    };
 
+    explicit AggCol(std::shared_ptr<Col> column) :
+            column_(std::move(column)), agg_type_(AGG_NO_OP) {};
 
-    SelectStmt(std::vector<std::shared_ptr<Col>> cols_,
-               std::vector<std::string> tabs_,
-               std::vector<std::shared_ptr<BinaryExpr>> conds_,
-               std::shared_ptr<OrderBy> order_) :
-            cols(std::move(cols_)), tabs(std::move(tabs_)), conds(std::move(conds_)), 
-            order(std::move(order_)) {
-                has_sort = (bool)order;
-            }
+    AggCol(std::shared_ptr<Col> column, AggrType agg_type) :
+        column_(std::move(column)), agg_type_(agg_type) {};
+
+    void setAlias(std::string alias) {
+        has_alias_ = true;
+        alias_ = std::move(alias);
+    }
 };
+
+struct HavingExpr: public TreeNode {
+    std::shared_ptr<AggCol> lhs_;
+    SvCompOp op_;
+    std::shared_ptr<Value> rhs_;
+
+    HavingExpr(std::shared_ptr<AggCol> lhs, SvCompOp op, std::shared_ptr<Value> rhs) :
+        lhs_(std::move(lhs)), op_(op), rhs_(std::move(rhs)) {};
+};
+
+struct SelectStmt : public TreeNode {
+    std::vector<std::shared_ptr<AggCol>> agg_cols_;
+    std::vector<std::string> tabs_;
+    std::vector<std::shared_ptr<BinaryExpr>> conds_;
+    std::vector<std::shared_ptr<JoinExpr>> jointree_;
+    std::vector<std::shared_ptr<Col>> group_bys_;
+    std::vector<std::shared_ptr<HavingExpr>> havings_;
+
+    bool has_sort_;
+    std::shared_ptr<OrderBy> order_bys_;
+
+    SelectStmt(std::vector<std::shared_ptr<AggCol>> agg_cols, std::vector<std::string> tabs,
+                  std::vector<std::shared_ptr<BinaryExpr>> conds, std::vector<std::shared_ptr<Col>> group_bys,
+                  std::vector<std::shared_ptr<HavingExpr>> havings, std::shared_ptr<OrderBy> order_bys):
+                  agg_cols_(std::move(agg_cols)), tabs_(std::move(tabs)), conds_(std::move(conds)),
+                  group_bys_(std::move(group_bys)), havings_(std::move(havings)), order_bys_(std::move(order_bys)) {
+                      has_sort_ = (bool)order_bys_;
+                  };
+};
+
+struct Subquery: public Expr {
+    std::shared_ptr<TreeNode> sub_query_;
+
+    Subquery(std::shared_ptr<TreeNode> sub_query) : sub_query_(std::move(sub_query)) {
+        printf("Subquery here\n");
+    };
+};
+
+//struct Subquery : public TreeNode {
+//    std::shared_ptr<Col> lhs_;
+//    SvCompOp op_;
+//    bool in_clause_;
+//    std::shared_ptr<TreeNode> rhs_;
+//
+//    Subquery(std::shared_ptr<Col> lhs, SvCompOp op, std::shared_ptr<TreeNode> rhs) :
+//        lhs_(std::move(lhs)), op_(op), rhs_(std::move(rhs)) {
+//        in_clause_ = false;
+//    };
+//
+//    Subquery(std::shared_ptr<Col> lhs, std::shared_ptr<TreeNode> rhs):
+//            lhs_(std::move(lhs)), rhs_(std::move(rhs)) {
+//        in_clause_ = true;
+//    };
+//};
+
+//struct MultiSelectStmt : public TreeNode {
+//    std::vector<std::shared_ptr<AggCol>> agg_cols_;
+//    std::vector<std::string> tabs_;
+//    std::shared_ptr<Subquery> subquery_;
+//    std::vector<std::shared_ptr<JoinExpr>> jointree_;
+//    std::vector<std::shared_ptr<Col>> group_bys_;
+//    std::vector<std::shared_ptr<HavingExpr>> havings_;
+//
+//    bool has_sort_;
+//    std::shared_ptr<OrderBy> order_bys_;
+//
+//    MultiSelectStmt(std::vector<std::shared_ptr<AggCol>> agg_cols, std::vector<std::string> tabs,
+//                    std::shared_ptr<Subquery> subquery, std::vector<std::shared_ptr<Col>> group_bys,
+//                    std::vector<std::shared_ptr<HavingExpr>> havings, std::shared_ptr<OrderBy> order_bys):
+//                    agg_cols_(std::move(agg_cols)), tabs_(std::move(tabs)), subquery_(std::move(subquery)),
+//                    group_bys_(std::move(group_bys)), havings_(std::move(havings)), order_bys_(std::move(order_bys)) {
+//        has_sort_ = (bool)order_bys_;
+//    };
+//};
 
 // set enable_nestloop
 struct SetStmt : public TreeNode {
@@ -279,12 +368,19 @@ struct SemValue {
     std::shared_ptr<SetClause> sv_set_clause;
     std::vector<std::shared_ptr<SetClause>> sv_set_clauses;
 
+    std::shared_ptr<Subquery> sv_subquery;
     std::shared_ptr<BinaryExpr> sv_cond;
     std::vector<std::shared_ptr<BinaryExpr>> sv_conds;
 
     std::shared_ptr<OrderBy> sv_orderby;
 
     SetKnobType sv_setKnobType;
+
+    std::shared_ptr<AggCol> sv_agg_col;
+    std::vector<std::shared_ptr<AggCol>> sv_agg_cols;
+    std::vector<std::shared_ptr<Col>> sv_groupby;
+    std::shared_ptr<HavingExpr> sv_having;
+    std::vector<std::shared_ptr<HavingExpr>> sv_havings;
 };
 
 extern std::shared_ptr<ast::TreeNode> parse_tree;

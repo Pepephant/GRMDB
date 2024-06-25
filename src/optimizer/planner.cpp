@@ -150,7 +150,12 @@ std::shared_ptr<Query> Planner::logical_optimization(std::shared_ptr<Query> quer
 
 std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> query, Context *context)
 {
-    std::shared_ptr<Plan> plan = make_one_rel(query);
+    std::shared_ptr<Plan> plan;
+    if (query->aggregates_.empty() && query->group_bys_.empty()) {
+        plan = make_one_rel(query);
+    } else {
+        plan = make_aggr_plan(query);
+    }
     
     // 其他物理优化
 
@@ -160,7 +165,16 @@ std::shared_ptr<Plan> Planner::physical_optimization(std::shared_ptr<Query> quer
     return plan;
 }
 
+std::shared_ptr<Plan> Planner::make_aggr_plan(std::shared_ptr<Query> query) {
+    auto x = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
+    auto subplan = make_one_rel(query);
 
+    auto root_plan = std::make_shared<AggrPlan>(subplan,
+        query->havings_, query->aggregates_,
+        query->group_bys_);
+
+    return root_plan;
+}
 
 std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
 {
@@ -175,11 +189,25 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
         bool index_exist = get_index_cols(tables[i], curr_conds, index_col_names);
         if (index_exist == false) {  // 该表没有索引
             index_col_names.clear();
-            table_scan_executors[i] = 
-                std::make_shared<ScanPlan>(T_SeqScan, sm_manager_, tables[i], curr_conds, index_col_names);
+            if (query->has_subquery_) {
+                SubQueryClause sub_clause = {.lhs = query->subquery_.lhs, .op = query->subquery_.op, .in_clause = query->subquery_.in_clause};
+                auto scan_plan = std::make_shared<ScanPlan>(T_SeqScan, sm_manager_, tables[i], curr_conds,
+                                                            index_col_names, sub_clause);
+                scan_plan->sub_plan_ = generate_select_plan(query->subquery_.sub, nullptr);
+                table_scan_executors[i] = std::move(scan_plan);
+            } else {
+                table_scan_executors[i] = std::make_shared<ScanPlan>(T_SeqScan, sm_manager_, tables[i], curr_conds, index_col_names);
+            }
         } else {  // 存在索引
-            table_scan_executors[i] =
-                std::make_shared<ScanPlan>(T_IndexScan, sm_manager_, tables[i], curr_conds, index_col_names);
+            if (query->has_subquery_) {
+                SubQueryClause sub_clause = {.lhs = query->subquery_.lhs, .op = query->subquery_.op, .in_clause = query->subquery_.in_clause};
+                auto scan_plan = std::make_shared<ScanPlan>(T_IndexScan, sm_manager_, tables[i], curr_conds,
+                                                            index_col_names, sub_clause);
+                scan_plan->sub_plan_ = generate_select_plan(query->subquery_.sub, nullptr);
+                table_scan_executors[i] = std::move(scan_plan);
+            } else {
+                table_scan_executors[i] = std::make_shared<ScanPlan>(T_IndexScan, sm_manager_, tables[i], curr_conds, index_col_names);
+            }
         }
     }
     // 只有一个表，不需要join。
@@ -288,7 +316,8 @@ std::shared_ptr<Plan> Planner::make_one_rel(std::shared_ptr<Query> query)
 std::shared_ptr<Plan> Planner::generate_sort_plan(std::shared_ptr<Query> query, std::shared_ptr<Plan> plan)
 {
     auto x = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse);
-    if(!x->has_sort) {
+    if (x == nullptr) { return plan; }
+    if(!x->has_sort_) {
         return plan;
     }
     std::vector<std::string> tables = query->tables;
@@ -300,11 +329,11 @@ std::shared_ptr<Plan> Planner::generate_sort_plan(std::shared_ptr<Query> query, 
     }
     TabCol sel_col;
     for (auto &col : all_cols) {
-        if(col.name.compare(x->order->cols->col_name) == 0 )
+        if(col.name.compare(x->order_bys_->cols->col_name) == 0 )
         sel_col = {.tab_name = col.tab_name, .col_name = col.name};
     }
     return std::make_shared<SortPlan>(T_Sort, std::move(plan), sel_col, 
-                                    x->order->orderby_dir == ast::OrderBy_DESC);
+                                    x->order_bys_->orderby_dir == ast::OrderBy_DESC);
 }
 
 
@@ -323,7 +352,20 @@ std::shared_ptr<Plan> Planner::generate_select_plan(std::shared_ptr<Query> query
     auto sel_cols = query->cols;
     std::shared_ptr<Plan> plannerRoot = physical_optimization(query, context);
     plannerRoot = std::make_shared<ProjectionPlan>(T_Projection, std::move(plannerRoot), 
-                                                        std::move(sel_cols));
+                                                        std::move(sel_cols), std::move(query->aliases_));
+
+    return plannerRoot;
+}
+
+std::shared_ptr<Plan> Planner::generate_aggr_plan(std::shared_ptr<Query> query, Context *context) {
+    //逻辑优化
+    query = logical_optimization(std::move(query), context);
+
+    //物理优化
+    auto sel_cols = query->cols;
+    std::shared_ptr<Plan> plannerRoot = physical_optimization(query, context);
+    plannerRoot = std::make_shared<ProjectionPlan>(T_Projection, std::move(plannerRoot),
+                                                   std::move(sel_cols), std::move(query->aliases_));
 
     return plannerRoot;
 }
@@ -399,13 +441,11 @@ std::shared_ptr<Plan> Planner::do_planner(std::shared_ptr<Query> query, Context 
         plannerRoot = std::make_shared<DMLPlan>(T_Update, table_scan_executors, x->tab_name,
                                                      std::vector<Value>(), query->conds, 
                                                      query->set_clauses);
-    } else if (auto x = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse)) {
-
-        std::shared_ptr<plannerInfo> root = std::make_shared<plannerInfo>(x);
-        // 生成select语句的查询执行计划
-        std::shared_ptr<Plan> projection = generate_select_plan(std::move(query), context);
-        plannerRoot = std::make_shared<DMLPlan>(T_select, projection, std::string(), std::vector<Value>(),
-                                                    std::vector<Condition>(), std::vector<SetClause>());
+    }
+    else if (auto x = std::dynamic_pointer_cast<ast::SelectStmt>(query->parse)) {
+        std::shared_ptr<aggrInfo> root = std::make_shared<aggrInfo>(x);
+        std::shared_ptr<Plan> projection = generate_aggr_plan(std::move(query), context);
+        plannerRoot = std::make_shared<DQLPlan>(T_select, projection);
     } else {
         throw InternalError("Unexpected AST root");
     }

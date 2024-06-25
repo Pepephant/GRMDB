@@ -23,6 +23,8 @@ See the Mulan PSL v2 for more details. */
 #include "execution/executor_insert.h"
 #include "execution/executor_delete.h"
 #include "execution/execution_sort.h"
+#include "execution/executor_aggregation.h"
+#include "execution/exection_subquery.h"
 #include "common/common.h"
 
 typedef enum portalTag{
@@ -67,12 +69,6 @@ class Portal
             return std::make_shared<PortalStmt>(PORTAL_MULTI_QUERY, std::vector<TabCol>(), std::unique_ptr<AbstractExecutor>(),plan);
         } else if (auto x = std::dynamic_pointer_cast<DMLPlan>(plan)) {
             switch(x->tag) {
-                case T_select:
-                {
-                    std::shared_ptr<ProjectionPlan> p = std::dynamic_pointer_cast<ProjectionPlan>(x->subplan_);
-                    std::unique_ptr<AbstractExecutor> root= convert_plan_executor(p, context);
-                    return std::make_shared<PortalStmt>(PORTAL_ONE_SELECT, std::move(p->sel_cols_), std::move(root), plan);
-                }
                     
                 case T_Update:
                 {
@@ -112,7 +108,12 @@ class Portal
                     throw InternalError("Unexpected field type");
                     break;
             }
-        } else {
+        } else if (auto x = std::dynamic_pointer_cast<DQLPlan>(plan)) {
+            std::shared_ptr<ProjectionPlan> p = std::dynamic_pointer_cast<ProjectionPlan>(x->subplan_);
+            std::unique_ptr<AbstractExecutor> root= convert_plan_executor(p, context);
+            return std::make_shared<PortalStmt>(PORTAL_ONE_SELECT, std::move(p->sel_cols_), std::move(root), plan);
+        }
+        else {
             throw InternalError("Unexpected field type");
         }
         return nullptr;
@@ -157,9 +158,13 @@ class Portal
     {
         if(auto x = std::dynamic_pointer_cast<ProjectionPlan>(plan)){
             return std::make_unique<ProjectionExecutor>(convert_plan_executor(x->subplan_, context), 
-                                                        x->sel_cols_);
+                                                        x->cols_, x->sel_cols_);
         } else if(auto x = std::dynamic_pointer_cast<ScanPlan>(plan)) {
             if(x->tag == T_SeqScan) {
+                if (x->has_subquery_) {
+                    return std::make_unique<SubqueryExecutor>(sm_manager_, x->tab_name_, x->conds_, x->sub_clause_,
+                                                              convert_plan_executor(x->sub_plan_, context));
+                }
                 return std::make_unique<SeqScanExecutor>(sm_manager_, x->tab_name_, x->conds_, context);
             }
             else {
@@ -175,6 +180,9 @@ class Portal
         } else if(auto x = std::dynamic_pointer_cast<SortPlan>(plan)) {
             return std::make_unique<SortExecutor>(convert_plan_executor(x->subplan_, context), 
                                             x->sel_col_, x->is_desc_);
+        } else if (auto x = std::dynamic_pointer_cast<AggrPlan>(plan)) {
+            return std::make_unique<AggregateExecutor>(convert_plan_executor(x->subplan_, context),
+                                            x->aggregates_, x->group_bys_, x->havings_, context);
         }
         return nullptr;
     }

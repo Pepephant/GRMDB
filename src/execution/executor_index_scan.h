@@ -73,7 +73,9 @@ class IndexScanExecutor : public AbstractExecutor {
 
         GetBound(&lower, &upper, ih);
         ix_scan_ = std::make_unique<IxScan>(ih, lower, upper, bpm);
-        rid_ = ix_scan_->rid();
+        if (!ix_scan_->is_end()) {
+            rid_ = ix_scan_->rid();
+        }
     }
 
     void nextTuple() override {

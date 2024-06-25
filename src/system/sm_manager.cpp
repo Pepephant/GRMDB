@@ -94,6 +94,11 @@ void SmManager::open_db(const std::string& db_name) {
         throw UnixError();
     }
 
+    std::ifstream ifs(DB_META_NAME);
+
+    // Read from db.meta
+    ifs >> db_;
+
     // 打开表对应的文件
     for (auto& tab: db_.tabs_) {
         auto fhd = rm_manager_->open_file(tab.first);
@@ -106,11 +111,6 @@ void SmManager::open_db(const std::string& db_name) {
             ihs_.emplace(ix_name, std::move(ihd));
         }
     }
-
-    std::ifstream ifs(DB_META_NAME);
-
-    // Read from db.meta
-    ifs >> db_;
 }
 
 /**
@@ -308,6 +308,7 @@ void SmManager::create_index(const std::string& tab_name, const std::vector<std:
         ih->insert_entry(key, rid, context->txn_);
     }
 
+    // ix_manager_->close_index(ihs_.find(ix_name)->second.get());
     flush_meta();
 }
 

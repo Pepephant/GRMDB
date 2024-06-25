@@ -27,7 +27,21 @@ struct TabCol {
     friend bool operator<(const TabCol &x, const TabCol &y) {
         return std::make_pair(x.tab_name, x.col_name) < std::make_pair(y.tab_name, y.col_name);
     }
+
+    friend bool operator==(const TabCol &x, const TabCol &y) {
+        return x.tab_name == y.tab_name && x.col_name == y.col_name;
+    }
 };
+
+enum AggrType { SUM, MAX, MIN, COUNT, COUNT_STAR };
+
+struct AggrCol {
+    TabCol tab_col_;
+    AggrType type_;
+    std::string alias_;
+};
+
+enum CompOp { OP_EQ, OP_NE, OP_LT, OP_GT, OP_LE, OP_GE };
 
 struct Value {
     ColType type;  // type of value
@@ -106,9 +120,75 @@ struct Value {
         }
         init_raw(len);
     }
-};
 
-enum CompOp { OP_EQ, OP_NE, OP_LT, OP_GT, OP_LE, OP_GE };
+    inline static bool ValueComp(Value left, Value right, CompOp op) {
+        if (left.type == TYPE_INT && right.type == TYPE_INT) {
+            return ValueComp(left.int_val, right.int_val, op);
+        } else if (left.type == TYPE_FLOAT && right.type == TYPE_FLOAT) {
+            return ValueComp(left.float_val, right.float_val, op);
+        } else if (left.type == TYPE_STRING && right.type == TYPE_STRING) {
+            return ValueComp(left.str_val, right.str_val, op);
+        } else if (left.type == TYPE_FLOAT && right.type == TYPE_INT) {
+            return ValueComp(left.float_val, static_cast<float>(right.int_val), op);
+        } else if (left.type == TYPE_INT && right.type == TYPE_FLOAT) {
+            return ValueComp(static_cast<float>(left.int_val), right.float_val, op);
+        }else {
+            throw IncompatibleTypeError("", "");
+        }
+    }
+
+    inline static bool ValueComp(int left, int right, CompOp op) {
+        switch (op) {
+            case OP_EQ: return left == right;
+            case OP_NE: return left != right;
+            case OP_GE: return left >= right;
+            case OP_LE: return left <= right;
+            case OP_GT: return left > right;
+            case OP_LT: return left < right;
+            default: break;
+        }
+        return false;
+    }
+
+    inline static bool ValueComp(float left, float right, CompOp op) {
+        switch (op) {
+            case OP_EQ: return left == right;
+            case OP_NE: return left != right;
+            case OP_GE: return left >= right;
+            case OP_LE: return left <= right;
+            case OP_GT: return left > right;
+            case OP_LT: return left < right;
+            default: break;
+        }
+        return false;
+    }
+
+    inline static bool ValueComp(std::string left, std::string right, CompOp op) {
+        switch (op) {
+            case OP_EQ: return left == right;
+            case OP_NE: return left != right;
+            case OP_GE: return left >= right;
+            case OP_LE: return left <= right;
+            case OP_GT: return left > right;
+            case OP_LT: return left < right;
+            default: break;
+        }
+        return false;
+    }
+
+    static auto TypeCompatible(ColType left, ColType right) -> bool {
+        if (left == right) {
+            return true;
+        }
+        if (left == TYPE_INT && right == TYPE_FLOAT) {
+            return true;
+        }
+        if (left == TYPE_FLOAT && right == TYPE_INT) {
+            return true;
+        }
+        return false;
+    }
+};
 
 struct Condition {
     TabCol lhs_col;   // left-hand side column
@@ -118,7 +198,19 @@ struct Condition {
     Value rhs_val;    // right-hand side value
 };
 
+struct HavingCond {
+    AggrCol lhs_col;
+    CompOp op;
+    Value rhs_val;
+};
+
 struct SetClause {
     TabCol lhs;
     Value rhs;
+};
+
+struct SubQueryClause {
+    TabCol lhs;
+    CompOp op;
+    bool in_clause;
 };
