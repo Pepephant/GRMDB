@@ -14,10 +14,12 @@ See the Mulan PSL v2 for more details. */
 #include <cstring>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 #include "parser/ast.h"
 
 #include "parser/parser.h"
+#include "analyze/analyze.h"
 
 typedef enum PlanTag{
     T_Invalid = 1,
@@ -67,8 +69,24 @@ class ScanPlan : public Plan
             len_ = cols_.back().offset + cols_.back().len;
             fed_conds_ = conds_;
             index_col_names_ = index_col_names;
-        
+            has_subquery_ = false;
         }
+
+        ScanPlan(PlanTag tag, SmManager *sm_manager, std::string tab_name, std::vector<Condition> conds,
+                 std::vector<std::string> index_col_names, SubQueryClause sub_clause)
+        {
+            Plan::tag = tag;
+            tab_name_ = std::move(tab_name);
+            conds_ = std::move(conds);
+            TabMeta &tab = sm_manager->db_.get_table(tab_name_);
+            cols_ = tab.cols;
+            len_ = cols_.back().offset + cols_.back().len;
+            fed_conds_ = conds_;
+            index_col_names_ = std::move(index_col_names);
+            has_subquery_ = true;
+            sub_clause_ = std::move(sub_clause);
+        }
+
         ~ScanPlan(){}
         // 以下变量同ScanExecutor中的变量
         std::string tab_name_;                     
@@ -77,7 +95,10 @@ class ScanPlan : public Plan
         size_t len_;                               
         std::vector<Condition> fed_conds_;
         std::vector<std::string> index_col_names_;
-    
+
+        bool has_subquery_{false};
+        SubQueryClause sub_clause_;
+        std::shared_ptr<Plan> sub_plan_;
 };
 
 class JoinPlan : public Plan
@@ -105,14 +126,22 @@ class JoinPlan : public Plan
 class ProjectionPlan : public Plan
 {
     public:
-        ProjectionPlan(PlanTag tag, std::shared_ptr<Plan> subplan, std::vector<TabCol> sel_cols)
+        ProjectionPlan(PlanTag tag, std::shared_ptr<Plan> subplan, std::vector<TabCol> sel_cols, std::vector<Alias> aliases)
         {
             Plan::tag = tag;
             subplan_ = std::move(subplan);
-            sel_cols_ = std::move(sel_cols);
+            cols_ = std::move(sel_cols);
+
+            for (int i = 0; i < cols_.size(); i++) {
+                sel_cols_.push_back(cols_[i]);
+                if (aliases[i].has_alias_) {
+                    sel_cols_[i].col_name = aliases[i].alias_;
+                }
+            }
         }
         ~ProjectionPlan(){}
         std::shared_ptr<Plan> subplan_;
+        std::vector<TabCol> cols_;
         std::vector<TabCol> sel_cols_;
         
 };
@@ -134,7 +163,7 @@ class SortPlan : public Plan
         
 };
 
-// dml语句，包括insert; delete; update; select语句　
+// dml语句，包括insert; delete; update语句　
 class DMLPlan : public Plan
 {
     public:
@@ -155,6 +184,32 @@ class DMLPlan : public Plan
         std::vector<Value> values_;
         std::vector<Condition> conds_;
         std::vector<SetClause> set_clauses_;
+};
+
+// dql语句，包括select语句　
+class DQLPlan : public Plan
+{
+public:
+    DQLPlan(PlanTag tag, std::shared_ptr<Plan> subplan)
+    {
+        Plan::tag = tag;
+        subplan_ = std::move(subplan);
+    }
+    ~DQLPlan(){}
+    std::shared_ptr<Plan> subplan_;
+};
+
+class AggrPlan : public Plan {
+public:
+    AggrPlan(std::shared_ptr<Plan> subplan, std::vector<HavingCond> havings_,
+             std::vector<AggrCol> aggregates, std::vector<TabCol> group_bys)
+             : subplan_(std::move(subplan)), havings_(std::move(havings_)), aggregates_(std::move(aggregates)),
+               group_bys_(std::move(group_bys)) {}
+
+    std::shared_ptr<Plan> subplan_;
+    std::vector<AggrCol> aggregates_;
+    std::vector<TabCol> group_bys_;
+    std::vector<HavingCond> havings_;
 };
 
 // ddl语句, 包括create/drop table; create/drop index;
@@ -210,4 +265,18 @@ class plannerInfo{
     std::vector<SetClause> set_clauses;
     plannerInfo(std::shared_ptr<ast::SelectStmt> parse_):parse(std::move(parse_)){}
 
+};
+
+
+class aggrInfo {
+public:
+    std::shared_ptr<ast::SelectStmt> parse;
+    std::vector<Condition> where_conds;
+    std::vector<TabCol> sel_cols;
+    std::shared_ptr<Plan> plan;
+    std::vector<std::shared_ptr<Plan>> table_scan_executors;
+
+    std::vector<TabCol> group_bys_;
+    std::vector<Condition> havings_;
+    aggrInfo(std::shared_ptr<ast::SelectStmt> parse_):parse(std::move(parse_)){}
 };

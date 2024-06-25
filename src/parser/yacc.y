@@ -1,13 +1,14 @@
 %{
 #include "ast.h"
 #include "yacc.tab.h"
+#include "errors.h"
 #include <iostream>
 #include <memory>
 
 int yylex(YYSTYPE *yylval, YYLTYPE *yylloc);
 
 void yyerror(YYLTYPE *locp, const char* s) {
-    std::cerr << "Parser Error at line " << locp->first_line << " column " << locp->first_column << ": " << s << std::endl;
+    throw ParserError(locp->first_line, locp->first_column, std::string(s));
 }
 
 using namespace ast;
@@ -21,7 +22,7 @@ using namespace ast;
 %define parse.error verbose
 
 // keywords
-%token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER BY
+%token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER BY GROUP HAVING MAX MIN SUM COUNT AS IN
 WHERE UPDATE SET SELECT INT CHAR FLOAT INDEX AND JOIN EXIT HELP TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE
 // non-keywords
 %token LEQ NEQ GEQ T_EOF
@@ -33,7 +34,7 @@ WHERE UPDATE SET SELECT INT CHAR FLOAT INDEX AND JOIN EXIT HELP TXN_BEGIN TXN_CO
 %token <sv_bool> VALUE_BOOL
 
 // specify types for non-terminal symbol
-%type <sv_node> stmt dbStmt ddl dml txnStmt setStmt
+%type <sv_node> stmt dbStmt ddl dml txnStmt setStmt dql
 %type <sv_field> field
 %type <sv_fields> fieldList
 %type <sv_type_len> type
@@ -41,10 +42,10 @@ WHERE UPDATE SET SELECT INT CHAR FLOAT INDEX AND JOIN EXIT HELP TXN_BEGIN TXN_CO
 %type <sv_expr> expr
 %type <sv_val> value
 %type <sv_vals> valueList
-%type <sv_str> tbName colName
+%type <sv_str> tbName colName alias
 %type <sv_strs> tableList colNameList
 %type <sv_col> col
-%type <sv_cols> colList selector
+%type <sv_cols> colList
 %type <sv_set_clause> setClause
 %type <sv_set_clauses> setClauses
 %type <sv_cond> condition
@@ -52,6 +53,13 @@ WHERE UPDATE SET SELECT INT CHAR FLOAT INDEX AND JOIN EXIT HELP TXN_BEGIN TXN_CO
 %type <sv_orderby>  order_clause opt_order_clause
 %type <sv_orderby_dir> opt_asc_desc
 %type <sv_setKnobType> set_knob_type
+
+// My modifications
+%type <sv_agg_col> aggCol selector
+%type <sv_agg_cols> selectors
+%type <sv_groupby> optGroupByClause
+%type <sv_having> havingExpr
+%type <sv_havings> havingClause optHavingClause
 
 %%
 start:
@@ -83,6 +91,7 @@ stmt:
     |   dml
     |   txnStmt
     |   setStmt
+    |   dql
     ;
 
 txnStmt:
@@ -158,9 +167,100 @@ dml:
     {
         $$ = std::make_shared<UpdateStmt>($2, $4, $5);
     }
-    |   SELECT selector FROM tableList optWhereClause opt_order_clause
+    ;
+
+dql:
+        SELECT selectors FROM tableList optWhereClause optGroupByClause optHavingClause opt_order_clause
     {
-        $$ = std::make_shared<SelectStmt>($2, $4, $5, $6);
+        $$ = std::make_shared<SelectStmt>($2, $4, $5, $6, $7, $8);
+    }
+    ;
+
+aggCol:
+        col
+    {
+        $$ = std::make_shared<AggCol>($1);
+    }
+    |   SUM '(' col ')'
+    {
+        $$ = std::make_shared<AggCol>($3, AGG_SUM);
+    }
+    |   MAX '(' col ')'
+    {
+        $$ = std::make_shared<AggCol>($3, AGG_MAX);
+    }
+    |   MIN '(' col ')'
+    {
+        $$ = std::make_shared<AggCol>($3, AGG_MIN);
+    }
+    |   COUNT '(' col ')'
+    {
+        $$ = std::make_shared<AggCol>($3, AGG_COUNT);
+    }
+    |   COUNT '(' '*' ')'
+    {
+        $$ = std::make_shared<AggCol>(AGG_COUNT_STAR);
+    }
+    ;
+
+selector:
+        aggCol AS alias
+    {
+        $1->setAlias($3);
+        $$ = $1;
+    }
+    |   aggCol
+    {
+        $$ = $1;
+    }
+    |   '*'
+    {
+        $$ = std::make_shared<AggCol>(NON_AGG_ALL);
+    }
+    ;
+
+selectors:
+        selector
+    {
+        $$ = std::vector<std::shared_ptr<AggCol>>{$1};
+    }
+    |   selectors ',' selector
+    {
+        $$.push_back($3);
+    }
+    ;
+
+optGroupByClause:
+        GROUP BY colList
+    {
+        $$ = $3;
+    }
+    | /* epsilon */ { /* ignore*/ }
+    ;
+
+havingExpr:
+        aggCol op value
+    {
+        $$ = std::make_shared<HavingExpr>($1, $2, $3);
+    }
+    ;
+
+havingClause:
+        havingExpr
+    {
+        $$ = std::vector<std::shared_ptr<HavingExpr>>{$1};
+    }
+    |   havingClause AND havingExpr
+    {
+        $$.push_back($3);
+    }
+    ;
+
+optHavingClause:
+        /* epsilon */ { /* ignore*/ }
+    |   HAVING havingClause
+    {
+        $$ = $2;
     }
     ;
 
@@ -243,6 +343,10 @@ condition:
     {
         $$ = std::make_shared<BinaryExpr>($1, $2, $3);
     }
+    |   col IN expr
+    {
+        $$ = std::make_shared<BinaryExpr>($1, $3);
+    }
     ;
 
 optWhereClause:
@@ -322,6 +426,11 @@ expr:
     {
         $$ = std::static_pointer_cast<Expr>($1);
     }
+    |   '(' dql ')'
+    {
+        $$ = std::make_shared<Subquery>($2);
+        $$ = std::static_pointer_cast<Expr>($$);
+    }
     ;
 
 setClauses:
@@ -340,14 +449,6 @@ setClause:
     {
         $$ = std::make_shared<SetClause>($1, $3);
     }
-    ;
-
-selector:
-        '*'
-    {
-        $$ = {};
-    }
-    |   colList
     ;
 
 tableList:
@@ -390,6 +491,7 @@ set_knob_type:
     ENABLE_NESTLOOP { $$ = EnableNestLoop; }
     |   ENABLE_SORTMERGE { $$ = EnableSortMerge; }
     ;
+alias: IDENTIFIER;
 
 tbName: IDENTIFIER;
 

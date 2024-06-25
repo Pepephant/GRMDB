@@ -13,6 +13,7 @@ See the Mulan PSL v2 for more details. */
 #include <cerrno>
 #include <cstring>
 #include <string>
+#include <utility>
 #include <vector>
 
 class RMDBError : public std::exception {
@@ -157,6 +158,17 @@ class IncompatibleTypeError : public RMDBError {
 class AmbiguousColumnError : public RMDBError {
    public:
     AmbiguousColumnError(const std::string &col_name) : RMDBError("Ambiguous column: " + col_name) {}
+};
+
+class SelectNonGroupByError : public RMDBError {
+public:
+    SelectNonGroupByError() : RMDBError("Non-aggregate column not in GROUP BY clause") {}
+};
+
+class ParserError : public RMDBError {
+public:
+    ParserError(int line, int column, const std::string& msg)
+        : RMDBError("Parser Error at line " + std::to_string(line) + " column " + std::to_string(column) + ": " + msg) {};
 };
 
 class PageNotExistError : public RMDBError {

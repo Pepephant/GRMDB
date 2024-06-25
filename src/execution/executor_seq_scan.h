@@ -47,11 +47,9 @@ class SeqScanExecutor : public AbstractExecutor {
         context_ = context;
 
         fed_conds_ = conds_;
-        std::cout << "SeqScanExecutor initialized" << '\n';
     }
 
     void beginTuple() override {
-        std::cout << "SeqScanExecutor::beginTuple()\n";
 
         scan_ = std::make_unique<RmScan>(fh_);
         rid_ = scan_->rid();
@@ -82,7 +80,6 @@ class SeqScanExecutor : public AbstractExecutor {
     }
 
     void nextTuple() override {
-        std::cout << "SeqScanExecutor::nextTuple()\n";
 
         if (last_rid_ == rid_) {
             is_end_ = true;
@@ -108,7 +105,6 @@ class SeqScanExecutor : public AbstractExecutor {
     }
 
     std::unique_ptr<RmRecord> Next() override {
-        std::cout << "Got one record" << '\n';
         return fh_->get_record(rid_, context_);
     }
 

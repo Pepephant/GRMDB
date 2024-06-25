@@ -20,6 +20,20 @@ See the Mulan PSL v2 for more details. */
 #include "system/sm.h"
 #include "common/common.h"
 
+struct Alias {
+    bool has_alias_;
+    std::string alias_;
+};
+
+class Query;
+
+struct Subquery {
+    TabCol lhs;
+    CompOp op;
+    bool in_clause {false};
+    std::shared_ptr<Query> sub;
+};
+
 class Query{
     public:
     std::shared_ptr<ast::TreeNode> parse;
@@ -35,8 +49,16 @@ class Query{
     //insert 的values值
     std::vector<Value> values;
 
-    Query(){}
+    std::vector<Alias> aliases_;
+    // 聚合列
+    std::vector<AggrCol> aggregates_;
+    std::vector<TabCol> group_bys_;
+    std::vector<HavingCond> havings_;
 
+    bool has_subquery_;
+    Subquery subquery_;
+
+    Query(){}
 };
 
 class Analyze
@@ -54,7 +76,12 @@ private:
     void get_all_cols(const std::vector<std::string> &tab_names, std::vector<ColMeta> &all_cols);
     void get_clause(const std::vector<std::shared_ptr<ast::BinaryExpr>> &sv_conds, std::vector<Condition> &conds);
     void check_clause(const std::vector<std::string> &tab_names, std::vector<Condition> &conds);
+    void check_tables(std::vector<std::string> tabs);
+    void check_aggr_cols(const std::vector<TabCol> &cols, const std::vector<TabCol> &group_bys);
     Value convert_sv_value(const std::shared_ptr<ast::Value> &sv_val);
     CompOp convert_sv_comp_op(ast::SvCompOp op);
+    AggrType convert_sv_aggr(ast::AggrType aggr_type);
+
+    void analyze_one_select(ast::SelectStmt* x, std::shared_ptr<Query> query);
 };
 

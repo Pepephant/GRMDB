@@ -23,8 +23,7 @@ class ProjectionExecutor : public AbstractExecutor {
     std::vector<size_t> sel_idxs_;                  
 
    public:
-    ProjectionExecutor(std::unique_ptr<AbstractExecutor> prev, const std::vector<TabCol> &sel_cols) {
-        std::cout << "Try initializing ProjectionExecutor\n";
+    ProjectionExecutor(std::unique_ptr<AbstractExecutor> prev, const std::vector<TabCol> &sel_cols, const std::vector<TabCol> &cols) {
         prev_ = std::move(prev);
 
         size_t curr_offset = 0;
@@ -37,8 +36,11 @@ class ProjectionExecutor : public AbstractExecutor {
             curr_offset += col.len;
             cols_.push_back(col);
         }
+        for (int i = 0; i < cols.size(); i++) {
+            cols_[i].tab_name = cols_[i].tab_name;
+            cols_[i].name = cols[i].col_name;
+        }
         len_ = curr_offset;
-        std::cout << "Initialized ProjectionExecutor\n";
     }
 
     void beginTuple() override {

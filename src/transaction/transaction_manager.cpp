@@ -26,8 +26,30 @@ Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manage
     // 2. 如果为空指针，创建新事务
     // 3. 把开始事务加入到全局事务表中
     // 4. 返回当前事务指针
-    
-    return nullptr;
+    // std::unique_lock<std::mutex> lock(latch_);
+    txn_id_t txn_id;
+    timestamp_t start_ts;
+
+    if (txn == nullptr) {
+        txn_id = next_txn_id_++;
+        start_ts = next_timestamp_++;
+        txn = new Transaction(txn_id);
+        txn->set_start_ts(start_ts);
+        txn->set_state(TransactionState::GROWING);
+    } else {
+        txn_id = txn->get_transaction_id();
+    }
+    std::unique_lock<std::mutex> lock(latch_);
+    txn_map[txn_id] = txn;
+    lock.unlock();
+
+    if (log_manager != nullptr) {
+        auto record = BeginLogRecord(txn->get_transaction_id());
+        record.prev_lsn_ = txn->get_prev_lsn();
+        log_manager->add_log_to_buffer(&record);
+    }
+
+    return txn;
 }
 
 /**
@@ -43,6 +65,31 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
     // 4. 把事务日志刷入磁盘中
     // 5. 更新事务状态
 
+    // 提交所有的写操作
+    auto write_set = txn->get_write_set();
+    while (!write_set->empty()) {
+        WriteRecord* record = write_set->front();
+        write_set->pop_front();
+        delete record;
+    }
+
+    // 释放所有锁
+    for (const auto& lock_data_id : *txn->get_lock_set()) {
+        lock_manager_->unlock(txn, lock_data_id);
+    }
+
+    if (log_manager != nullptr) {
+        auto record = CommitLogRecord(txn->get_transaction_id());
+        record.prev_lsn_ = txn->get_prev_lsn();
+        log_manager->add_log_to_buffer(&record);
+    }
+
+    // 更新事务状态并释放资源
+//    std::unique_lock<std::mutex> lock(latch_);
+//    txn_map.erase(txn->get_transaction_id());
+//    lock.unlock();
+
+    txn->set_state(TransactionState::COMMITTED);
 }
 
 /**
@@ -57,5 +104,47 @@ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
     // 3. 清空事务相关资源，eg.锁集
     // 4. 把事务日志刷入磁盘中
     // 5. 更新事务状态
-    
+
+    // 回滚所有写操作
+    auto write_set = txn->get_write_set();
+    while (!write_set->empty()) {
+        WriteRecord* record = write_set->back();
+        write_set->pop_back();
+        RmFileHandle* file_handle = sm_manager_->fhs_[record->GetTableName()].get();
+        switch (record->GetWriteType()) {
+            case WType::INSERT_TUPLE:
+                // 删除插入的元组
+                file_handle->delete_record(record->GetRid(), nullptr);
+                break;
+            case WType::DELETE_TUPLE:
+                // 恢复删除的元组
+                file_handle->insert_record(record->GetRid(), record->GetRecord().data);
+                break;
+            case WType::UPDATE_TUPLE:
+                // 回滚更新的元组
+                file_handle->update_record(record->GetRid(), record->GetRecord().data, nullptr);
+                break;
+        }
+        delete record;
+    }
+
+    // 释放所有锁
+    for (const auto& lock_data_id : *txn->get_lock_set()) {
+        lock_manager_->unlock(txn, lock_data_id);
+    }
+
+    // 清空事务相关资源
+    txn->get_lock_set()->clear();
+
+    if (log_manager != nullptr) {
+        auto record = AbortLogRecord(txn->get_transaction_id());
+        record.prev_lsn_ = txn->get_prev_lsn();
+        log_manager->add_log_to_buffer(&record);
+    }
+
+    // 更新事务状态并释放资源
+//    std::unique_lock<std::mutex> lock(latch_);
+//    txn_map.erase(txn->get_transaction_id());
+//    lock.unlock();
+    txn->set_state(TransactionState::ABORTED);
 }
