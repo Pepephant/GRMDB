@@ -36,6 +36,7 @@ lsn_t LogManager::add_log_to_buffer(LogRecord* log_record) {
 
     // 将日志记录复制到日志缓冲区中
     char *dest = new char[log_record_size];
+    log_record->serialize(dest);
     std::memcpy(log_buffer_.buffer_+log_buffer_.offset_, dest, sizeof(dest));
 
     // 更新缓冲区大小和下一个LSN

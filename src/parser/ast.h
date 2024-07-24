@@ -174,6 +174,19 @@ struct SetClause : public TreeNode {
             col_name(std::move(col_name_)), val(std::move(val_)) {}
 };
 
+struct Subquery: public Expr {
+    std::shared_ptr<TreeNode> sub_query_;
+
+    Subquery(std::shared_ptr<TreeNode> sub_query) : sub_query_(std::move(sub_query)) {
+    };
+};
+
+struct ValueList: public Expr {
+    std::vector<std::shared_ptr<ast::Value>> values_;
+
+    ValueList(std::vector<std::shared_ptr<ast::Value>> values) : values_(std::move(values)) {};
+};
+
 struct BinaryExpr : public TreeNode {
     std::shared_ptr<Col> lhs;
     bool in_clause;
@@ -184,7 +197,14 @@ struct BinaryExpr : public TreeNode {
             lhs(std::move(lhs_)), op(op_), rhs(std::move(rhs_)) { in_clause = false; };
 
     BinaryExpr(std::shared_ptr<Col> lhs_, std::shared_ptr<Expr> rhs_) :
-            lhs(std::move(lhs_)), rhs(std::move(rhs_)) { in_clause = true; op = {}; };
+            lhs(std::move(lhs_)), rhs(std::move(rhs_)) {
+        if (std::dynamic_pointer_cast<Subquery>(rhs) != nullptr) {
+        } else if (std::dynamic_pointer_cast<ValueList>(rhs) != nullptr) {
+        } else {
+            throw InternalError("Unexpected expression after IN");
+        }
+        in_clause = true; op = {};
+    };
 };
 
 struct OrderBy : public TreeNode
@@ -284,51 +304,6 @@ struct SelectStmt : public TreeNode {
                       has_sort_ = (bool)order_bys_;
                   };
 };
-
-struct Subquery: public Expr {
-    std::shared_ptr<TreeNode> sub_query_;
-
-    Subquery(std::shared_ptr<TreeNode> sub_query) : sub_query_(std::move(sub_query)) {
-        printf("Subquery here\n");
-    };
-};
-
-//struct Subquery : public TreeNode {
-//    std::shared_ptr<Col> lhs_;
-//    SvCompOp op_;
-//    bool in_clause_;
-//    std::shared_ptr<TreeNode> rhs_;
-//
-//    Subquery(std::shared_ptr<Col> lhs, SvCompOp op, std::shared_ptr<TreeNode> rhs) :
-//        lhs_(std::move(lhs)), op_(op), rhs_(std::move(rhs)) {
-//        in_clause_ = false;
-//    };
-//
-//    Subquery(std::shared_ptr<Col> lhs, std::shared_ptr<TreeNode> rhs):
-//            lhs_(std::move(lhs)), rhs_(std::move(rhs)) {
-//        in_clause_ = true;
-//    };
-//};
-
-//struct MultiSelectStmt : public TreeNode {
-//    std::vector<std::shared_ptr<AggCol>> agg_cols_;
-//    std::vector<std::string> tabs_;
-//    std::shared_ptr<Subquery> subquery_;
-//    std::vector<std::shared_ptr<JoinExpr>> jointree_;
-//    std::vector<std::shared_ptr<Col>> group_bys_;
-//    std::vector<std::shared_ptr<HavingExpr>> havings_;
-//
-//    bool has_sort_;
-//    std::shared_ptr<OrderBy> order_bys_;
-//
-//    MultiSelectStmt(std::vector<std::shared_ptr<AggCol>> agg_cols, std::vector<std::string> tabs,
-//                    std::shared_ptr<Subquery> subquery, std::vector<std::shared_ptr<Col>> group_bys,
-//                    std::vector<std::shared_ptr<HavingExpr>> havings, std::shared_ptr<OrderBy> order_bys):
-//                    agg_cols_(std::move(agg_cols)), tabs_(std::move(tabs)), subquery_(std::move(subquery)),
-//                    group_bys_(std::move(group_bys)), havings_(std::move(havings)), order_bys_(std::move(order_bys)) {
-//        has_sort_ = (bool)order_bys_;
-//    };
-//};
 
 // set enable_nestloop
 struct SetStmt : public TreeNode {

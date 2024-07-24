@@ -35,10 +35,11 @@ Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manage
         start_ts = next_timestamp_++;
         txn = new Transaction(txn_id);
         txn->set_start_ts(start_ts);
-        txn->set_state(TransactionState::GROWING);
+        // txn->set_state(TransactionState::GROWING);
     } else {
         txn_id = txn->get_transaction_id();
     }
+    txn->set_state(TransactionState::GROWING);
     std::unique_lock<std::mutex> lock(latch_);
     txn_map[txn_id] = txn;
     lock.unlock();
@@ -46,7 +47,8 @@ Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manage
     if (log_manager != nullptr) {
         auto record = BeginLogRecord(txn->get_transaction_id());
         record.prev_lsn_ = txn->get_prev_lsn();
-        log_manager->add_log_to_buffer(&record);
+        auto lsn = log_manager->add_log_to_buffer(&record);
+        txn->set_prev_lsn(lsn);
     }
 
     return txn;
@@ -67,21 +69,51 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
 
     // 提交所有的写操作
     auto write_set = txn->get_write_set();
-    while (!write_set->empty()) {
-        WriteRecord* record = write_set->front();
-        write_set->pop_front();
-        delete record;
+    if(!write_set->empty()) {
+        write_set->clear();
     }
+//    while (!write_set->empty()) {
+//        WriteRecord record = write_set->front();
+//        write_set->pop_front();
+//        RmFileHandle* file_handle = sm_manager_->fhs_[record.GetTableName()].get();
+//        if(record.record_ != nullptr || record.record_old_ != nullptr){
+//            switch (record.GetWriteType()) {
+//                case WType::INSERT_TUPLE:
+//                    // 插入元组
+//                    if(!txn->get_txn_mode()){
+//                        file_handle->insert_record(record.GetRecord().data, nullptr);
+//                    }
+//                    break;
+//                case WType::DELETE_TUPLE:
+//                    // 删除元组
+//                    if(!txn->get_txn_mode()) {
+//                        file_handle->delete_record(record.GetRid(), nullptr);
+//                    }
+//                    break;
+//                case WType::UPDATE_TUPLE:
+//                    // 更新元组
+//                    if(record.GetRecord().allocated_) {
+//                        file_handle->update_record(record.GetRid(), record.GetRecord().data, nullptr);
+//                    }
+//                    break;
+//            }
+//            // delete record;
+//        }
+//
+//    }
 
     // 释放所有锁
     for (const auto& lock_data_id : *txn->get_lock_set()) {
         lock_manager_->unlock(txn, lock_data_id);
     }
+    // 释放资源
+    txn->get_lock_set()->clear();
 
     if (log_manager != nullptr) {
         auto record = CommitLogRecord(txn->get_transaction_id());
         record.prev_lsn_ = txn->get_prev_lsn();
-        log_manager->add_log_to_buffer(&record);
+        auto lsn = log_manager->add_log_to_buffer(&record);
+        txn->set_prev_lsn(lsn);
     }
 
     // 更新事务状态并释放资源
@@ -108,24 +140,68 @@ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
     // 回滚所有写操作
     auto write_set = txn->get_write_set();
     while (!write_set->empty()) {
-        WriteRecord* record = write_set->back();
+        WriteRecord record = write_set->back();
         write_set->pop_back();
-        RmFileHandle* file_handle = sm_manager_->fhs_[record->GetTableName()].get();
-        switch (record->GetWriteType()) {
-            case WType::INSERT_TUPLE:
-                // 删除插入的元组
-                file_handle->delete_record(record->GetRid(), nullptr);
-                break;
-            case WType::DELETE_TUPLE:
-                // 恢复删除的元组
-                file_handle->insert_record(record->GetRid(), record->GetRecord().data);
-                break;
-            case WType::UPDATE_TUPLE:
-                // 回滚更新的元组
-                file_handle->update_record(record->GetRid(), record->GetRecord().data, nullptr);
-                break;
+        RmFileHandle* file_handle = sm_manager_->fhs_[record.GetTableName()].get();
+        auto indexes = sm_manager_->db_.get_table(record.GetTableName()).indexes;
+        auto tab_name_ = record.GetTableName();
+        auto tab_ = sm_manager_->db_.get_table(tab_name_);
+        if(record.record_ != nullptr || record.record_old_ != nullptr) {
+            switch (record.GetWriteType()) {
+                case WType::INSERT_TUPLE:
+                    // 删除插入的元组
+                    file_handle->delete_record(record.GetRid(), nullptr);
+                    // 删除索引
+                    for (auto &index: indexes) {
+                        auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
+                        char *key = new char[index.col_tot_len];
+                        for (size_t i = 0; i < index.col_num; ++i) {
+                            auto offset = tab_.get_col(index.cols[i].name)->offset;
+                            memcpy(key + index.cols[i].offset, record.GetRecord().data + offset, index.cols[i].len);
+                        }
+                        ih->delete_entry(key, txn);
+                    }
+                    break;
+                case WType::DELETE_TUPLE:
+                    // 恢复删除的元组
+                    file_handle->insert_record(record.GetRid(), record.GetRecord().data);
+                    // 插入索引
+                    for (auto &index: indexes) {
+                        auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
+                        char *key = new char[index.col_tot_len];
+                        for (size_t i = 0; i < index.col_num; ++i) {
+                            auto offset = tab_.get_col(index.cols[i].name)->offset;
+                            memcpy(key + index.cols[i].offset, record.GetRecord().data + offset, index.cols[i].len);
+                        }
+                        ih->insert_entry(key, record.GetRid(), txn);
+                    }
+                    break;
+                case WType::UPDATE_TUPLE:
+                    // 操作索引
+                    for(auto& index: indexes) {
+                        auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
+                        char* old_key = new char[index.col_tot_len];
+                        char* new_key = new char[index.col_tot_len];
+                        for(size_t i = 0; i < index.col_num; ++i) {
+                            auto offset = tab_.get_col(index.cols[i].name)->offset;
+                            memcpy(old_key + index.cols[i].offset, record.GetOldRecord().data + offset, index.cols[i].len);
+                        }
+                        for(size_t i = 0; i < index.col_num; ++i) {
+                            auto offset = tab_.get_col(index.cols[i].name)->offset;
+                            memcpy(new_key + index.cols[i].offset, record.GetRecord().data + offset, index.cols[i].len);
+                        }
+                        ih->delete_entry(new_key, txn);
+                        ih->insert_entry(old_key, record.GetRid(), txn);
+                    }
+                    // 回滚更新元组
+                    if(record.GetOldRecord().allocated_) {
+                        file_handle->update_record(record.GetRid(), record.GetOldRecord().data, nullptr);
+                    }
+                    break;
+            }
+            // delete record;
         }
-        delete record;
+
     }
 
     // 释放所有锁
@@ -139,7 +215,8 @@ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
     if (log_manager != nullptr) {
         auto record = AbortLogRecord(txn->get_transaction_id());
         record.prev_lsn_ = txn->get_prev_lsn();
-        log_manager->add_log_to_buffer(&record);
+        auto lsn = log_manager->add_log_to_buffer(&record);
+        txn->set_prev_lsn(lsn);
     }
 
     // 更新事务状态并释放资源

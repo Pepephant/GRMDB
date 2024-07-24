@@ -135,22 +135,7 @@ private:
                 right = getValue(cond.rhs_col, tuple);
             }
 
-            bool pred_cond = false;
-            if (left.type == TYPE_INT && right.type == TYPE_INT) {
-                pred_cond = ValueComp(left.int_val, right.int_val, cond.op);
-            } else if (left.type == TYPE_FLOAT && right.type == TYPE_INT) {
-                pred_cond = ValueComp(left.float_val, static_cast<float>(right.int_val), cond.op);
-            } else if (left.type == TYPE_INT && right.type == TYPE_FLOAT) {
-                pred_cond = ValueComp(static_cast<float>(left.int_val), right.float_val, cond.op);
-            } else if (left.type == TYPE_FLOAT && right.type == TYPE_FLOAT) {
-                pred_cond = ValueComp(left.float_val, right.float_val, cond.op);
-            } else if (left.type == TYPE_STRING && right.type == TYPE_STRING) {
-                pred_cond = ValueComp(left.str_val, right.str_val, cond.op);
-            } else {
-                auto lhs = cond.lhs_col.tab_name + ":" + cond.lhs_col.col_name;
-                auto rhs = cond.rhs_col.tab_name + ":" + cond.rhs_col.col_name;
-                throw IncompatibleTypeError(lhs, rhs);
-            }
+            bool pred_cond = Value::ValueComp(left, right, cond.op);
 
             if (!pred_cond) { return false; }
         }
@@ -191,44 +176,5 @@ private:
         }
 
         return val;
-    }
-
-    inline bool ValueComp(int left, int right, CompOp op) {
-        switch (op) {
-            case OP_EQ: return left == right;
-            case OP_NE: return left != right;
-            case OP_GE: return left >= right;
-            case OP_LE: return left <= right;
-            case OP_GT: return left > right;
-            case OP_LT: return left < right;
-            default: break;
-        }
-        return false;
-    }
-
-    inline bool ValueComp(float left, float right, CompOp op) {
-        switch (op) {
-            case OP_EQ: return left == right;
-            case OP_NE: return left != right;
-            case OP_GE: return left >= right;
-            case OP_LE: return left <= right;
-            case OP_GT: return left > right;
-            case OP_LT: return left < right;
-            default: break;
-        }
-        return false;
-    }
-
-    inline bool ValueComp(std::string left, std::string right, CompOp op) {
-        switch (op) {
-            case OP_EQ: return left == right;
-            case OP_NE: return left != right;
-            case OP_GE: return left >= right;
-            case OP_LE: return left <= right;
-            case OP_GT: return left > right;
-            case OP_LT: return left < right;
-            default: break;
-        }
-        return false;
     }
 };

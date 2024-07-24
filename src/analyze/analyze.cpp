@@ -120,12 +120,8 @@ void Analyze::check_clause(const std::vector<std::string> &tab_names, std::vecto
             auto rhs_col = rhs_tab.get_col(cond.rhs_col.col_name);
             rhs_type = rhs_col->type;
         }
-        if (lhs_type != rhs_type) {
-            if (lhs_type == TYPE_FLOAT && rhs_type == TYPE_INT) {
-                // This condition is acceptable
-            } else {
-                throw IncompatibleTypeError(coltype2str(lhs_type), coltype2str(rhs_type));
-            }
+        if (!Value::TypeCompatible(lhs_type, rhs_type)) {
+            throw IncompatibleTypeError("", "");
         }
     }
 }
@@ -181,6 +177,8 @@ AggrType Analyze::convert_sv_aggr(ast::AggrType aggr_type) {
             return SUM;
         case ast::AGG_COUNT_STAR:
             return COUNT_STAR;
+        case ast::AGG_NO_OP:
+            return NON_AGG;
         default:
             break;
     }
@@ -239,24 +237,39 @@ void Analyze::analyze_one_select(ast::SelectStmt* x, std::shared_ptr<Query> quer
     //处理subquery
     query->has_subquery_ = false;
     for (auto& cond: x->conds_) {
-        auto tmp = std::dynamic_pointer_cast<ast::Subquery>(cond->rhs);
-        if (tmp == nullptr) {
-            continue;
-        }
-        auto subquery = std::dynamic_pointer_cast<ast::SelectStmt>(tmp->sub_query_);
-        if (subquery != nullptr) {
+        if (auto tmp = std::dynamic_pointer_cast<ast::Subquery>(cond->rhs)) {
+            auto subquery = std::dynamic_pointer_cast<ast::SelectStmt>(tmp->sub_query_);
+            if (subquery != nullptr) {
+                query->has_subquery_ = true;
+                if (cond->in_clause) {
+                    query->subquery_.in_clause = true;
+                } else {
+                    query->subquery_.op = convert_sv_comp_op(cond->op);
+                }
+                query->subquery_.lhs = {
+                        .tab_name = cond->lhs->tab_name,
+                        .col_name = cond->lhs->col_name};
+                query->subquery_.lhs = check_column(all_cols, query->subquery_.lhs);
+                query->subquery_.sub = std::make_shared<Query>();
+                analyze_one_select(subquery.get(), query->subquery_.sub);
+            }
+        } else if (auto valueList = std::dynamic_pointer_cast<ast::ValueList>(cond->rhs)){
             query->has_subquery_ = true;
             if (cond->in_clause) {
                 query->subquery_.in_clause = true;
-            } else {
-                query->subquery_.op = convert_sv_comp_op(cond->op);
+            } else if (valueList->values_.size() != 1){
+                throw InternalError("valueList more than 1");
             }
             query->subquery_.lhs = {
                     .tab_name = cond->lhs->tab_name,
                     .col_name = cond->lhs->col_name};
             query->subquery_.lhs = check_column(all_cols, query->subquery_.lhs);
             query->subquery_.sub = std::make_shared<Query>();
-            analyze_one_select(subquery.get(), query->subquery_.sub);
+            query->subquery_.sub->cols.push_back(query->subquery_.lhs);
+            for (auto& value: valueList->values_) {
+                query->subquery_.sub->values.push_back(convert_sv_value(value));
+            }
+            query->subquery_.value_list = true;
         }
     }
 
@@ -283,6 +296,17 @@ void Analyze::analyze_one_select(ast::SelectStmt* x, std::shared_ptr<Query> quer
             cond.op = convert_sv_comp_op(having->op_);
             cond.rhs_val = convert_sv_value(having->rhs_);
             query->havings_.push_back(cond);
+        } else if (lhs->agg_type_ == ast::AGG_NO_OP) {
+            Condition cond;
+            TabCol tab_col = {.tab_name = lhs->column_->tab_name, .col_name = lhs->column_->col_name};
+            cond.lhs_col = check_column(all_cols, tab_col);
+            if (std::find(query->group_bys_.begin(), query->group_bys_.end(), cond.lhs_col) == query->group_bys_.end()) {
+                throw InternalError("column must appear in the GROUP BY clause or be used in an aggregate function");
+            }
+            cond.op = convert_sv_comp_op(having->op_);
+            cond.is_rhs_val = true;
+            cond.rhs_val = convert_sv_value(having->rhs_);
+            query->conds.push_back(cond);
         } else {
             HavingCond cond;
             AggrCol aggr_col;

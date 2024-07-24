@@ -60,7 +60,7 @@ void SetTransaction(txn_id_t *txn_id, Context *context) {
     context->txn_ = txn_manager->get_transaction(*txn_id);
     if(context->txn_ == nullptr || context->txn_->get_state() == TransactionState::COMMITTED ||
         context->txn_->get_state() == TransactionState::ABORTED) {
-        context->txn_ = txn_manager->begin(nullptr, context->log_mgr_);
+        context->txn_ = txn_manager->begin(txn_manager->get_transaction(*txn_id), context->log_mgr_);
         *txn_id = context->txn_->get_transaction_id();
         context->txn_->set_txn_mode(false);
     }
@@ -115,7 +115,8 @@ void *client_handler(void *sock_fd) {
         offset = 0;
 
         // 开启事务，初始化系统所需的上下文信息（包括事务对象指针、锁管理器指针、日志管理器指针、存放结果的buffer、记录结果长度的变量）
-        Context *context = new Context(lock_manager.get(), log_manager.get(), nullptr, data_send, &offset);
+        Context *context = new Context(lock_manager.get(), log_manager.get(), txn_manager->get_transaction(txn_id), data_send, &offset);
+        context->txn_mgr_ = txn_manager.get();
 //#ifdef TRANSACTION_IMPLEMENTED
         SetTransaction(&txn_id, context);
 //#endif
@@ -171,7 +172,7 @@ void *client_handler(void *sock_fd) {
                     }
                 }
             }
-        } catch (ParserError &e) {
+        } catch (RMDBError &e) {
             std::cerr << e.what() << std::endl;
 
             memcpy(data_send, e.what(), e.get_msg_len());

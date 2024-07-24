@@ -10,6 +10,7 @@ See the Mulan PSL v2 for more details. */
 
 #pragma once
 
+#include <cmath>
 #include "execution_defs.h"
 #include "execution_manager.h"
 #include "executor_abstract.h"
@@ -17,7 +18,7 @@ See the Mulan PSL v2 for more details. */
 #include "system/sm.h"
 
 class IndexScanExecutor : public AbstractExecutor {
-   private:
+private:
     std::string tab_name_;                      // 表名称
     TabMeta tab_;                               // 表的元数据
     std::vector<Condition> conds_;              // 扫描条件
@@ -32,25 +33,28 @@ class IndexScanExecutor : public AbstractExecutor {
     Rid rid_;
     std::unique_ptr<RecScan> scan_;
     std::unique_ptr<IxScan> ix_scan_;
+    IxIndexHandle* ih_;
 
     SmManager *sm_manager_;
+    bool is_end_;
 
-   public:
+
+public:
     IndexScanExecutor(SmManager *sm_manager, std::string tab_name, std::vector<Condition> conds, std::vector<std::string> index_col_names,
-                    Context *context) {
+                      Context *context) {
         sm_manager_ = sm_manager;
         context_ = context;
         tab_name_ = std::move(tab_name);
         tab_ = sm_manager_->db_.get_table(tab_name_);
         conds_ = std::move(conds);
         // index_no_ = index_no;
-        index_col_names_ = index_col_names; 
+        index_col_names_ = index_col_names;
         index_meta_ = *(tab_.get_index_meta(index_col_names_));
         fh_ = sm_manager_->fhs_.at(tab_name_).get();
         cols_ = tab_.cols;
         len_ = cols_.back().offset + cols_.back().len;
         std::map<CompOp, CompOp> swap_op = {
-            {OP_EQ, OP_EQ}, {OP_NE, OP_NE}, {OP_LT, OP_GT}, {OP_GT, OP_LT}, {OP_LE, OP_GE}, {OP_GE, OP_LE},
+                {OP_EQ, OP_EQ}, {OP_NE, OP_NE}, {OP_LT, OP_GT}, {OP_GT, OP_LT}, {OP_LE, OP_GE}, {OP_GE, OP_LE},
         };
 
         for (auto &cond : conds_) {
@@ -62,18 +66,44 @@ class IndexScanExecutor : public AbstractExecutor {
                 cond.op = swap_op.at(cond.op);
             }
         }
+
+        for (auto& cond : conds_) {
+            ColMeta col_meta = *tab_.get_col(cond.lhs_col.col_name);
+            ColType lhs = col_meta.type;
+            ColType rhs = cond.rhs_val.type;
+            if (!Value::TypeCompatible(col_meta.type, cond.rhs_val.type)) {
+                throw IncompatibleTypeError(coltype2str(lhs), coltype2str(rhs));
+            }
+            if (cond.rhs_val.type == TYPE_INT && col_meta.type == TYPE_FLOAT) {
+                cond.rhs_val.type = TYPE_FLOAT;
+                cond.rhs_val.float_val = static_cast<float>(cond.rhs_val.int_val);
+                cond.rhs_val.raw = nullptr;
+                cond.rhs_val.init_raw(col_meta.len);
+            }
+        }
+
         fed_conds_ = conds_;
+        is_end_ = false;
     }
 
     void beginTuple() override {
-        Iid lower, upper;
+        context_->lock_mgr_->lock_IS_on_table(context_->txn_,fh_->GetFd());
         auto ix_name = sm_manager_->get_ix_manager()->get_index_name(tab_name_, index_col_names_);
-        auto ih = sm_manager_->ihs_.at(ix_name).get();
+        ih_ = sm_manager_->ihs_.at(ix_name).get();
         auto bpm = sm_manager_->get_bpm();
 
-        GetBound(&lower, &upper, ih);
-        ix_scan_ = std::make_unique<IxScan>(ih, lower, upper, bpm);
-        if (!ix_scan_->is_end()) {
+        auto lower_bound = new char[index_meta_.col_tot_len];
+        auto upper_bound = new char[index_meta_.col_tot_len];
+        auto bound = get_bound();
+        Iid lower = bound.first;
+        Iid upper = bound.second;
+        ih_->get_key(lower, lower_bound);
+        ih_->get_key(upper, upper_bound);
+        is_end_ = (check_valid(lower_bound, upper_bound) || lower == upper);
+        print_key(lower_bound, "lower_bound");
+        print_key(upper_bound, "upper_bound");
+        ix_scan_ = std::make_unique<IxScan>(ih_, lower, upper, bpm);
+        if (!ix_scan_->is_end() && !is_end_) {
             rid_ = ix_scan_->rid();
         }
     }
@@ -86,10 +116,10 @@ class IndexScanExecutor : public AbstractExecutor {
     }
 
     std::unique_ptr<RmRecord> Next() override {
-        return sm_manager_->fhs_.at(tab_name_)->get_record(rid_, nullptr);
+        return fh_->get_record(rid_, nullptr);
     }
 
-    bool is_end() const override { return ix_scan_->is_end(); };
+    bool is_end() const override { return ix_scan_->is_end() || is_end_; };
 
     size_t tupleLen() const override { return len_; };
 
@@ -100,163 +130,122 @@ class IndexScanExecutor : public AbstractExecutor {
     Rid &rid() override { return rid_; }
 
 private:
-    auto Op2str(CompOp op) -> std::string {
-        std::map<CompOp, std::string> swap_op = {
-                {OP_EQ, "="}, {OP_NE, "!="}, {OP_LT, ">"}, {OP_GT, "<"}, {OP_LE, ">="}, {OP_GE, "<="},
-        };
-        return swap_op.at(op);
+
+    inline bool check_valid(const char* lower, const char* upper) {
+        return ix_compare(lower, upper, index_meta_.cols) > 0;
     }
 
-    void ShowCondition() {
-        std::fstream outfile;
-        outfile.open("output.txt", std::ios::out | std::ios::app);
-
-        outfile << "\nUse Index: ";
-        std::cout << "Use Index: ";
-        for (auto& index_col_name : index_col_names_) {
-            std::cout << index_col_name << " ";
-            outfile << index_col_name << " ";
-        }
-        std::cout << "\n";
-        outfile << "\n";
-        outfile.close();
-
-        for (auto& cond: conds_) {
-            std::cout << cond.lhs_col.col_name << Op2str(cond.op);
-            if (cond.is_rhs_val) {
-                switch (cond.rhs_val.type) {
-                    case TYPE_INT:
-                        std::cout << cond.rhs_val.int_val;
-                        break;
-                    case TYPE_FLOAT:
-                        std::cout << cond.rhs_val.float_val;
-                        break;
-                    case TYPE_STRING:
-                        std::cout << cond.rhs_val.str_val;
-                        break;
-                    default:
-                        break;
-                }
-            } else {
-                std::cout << cond.rhs_col.col_name;
-            }
-            std::cout << ",  ";
-        }
-        std::cout << "\n";
-    }
-
-    void GetBound(Iid* lower, Iid* upper, IxIndexHandle* ih) {
-        if (conds_.size() == 0) {
-            *lower = ih->leaf_begin();
-            *upper = ih->leaf_end();
-        }
-
-        if (conds_.size() == 1) {
-            GetBoundSingle(lower, upper, ih);
-            return ;
-        }
-
-        if (conds_.size() == 2) {
-            if (conds_[0].lhs_col.col_name == conds_[1].lhs_col.col_name) {
-                GetBoundSingle(lower, upper, ih);
-                return ;
-            }
-        }
-
-        GetBoundMultiple(lower, upper, ih);
-    }
-
-    void GetBoundMultiple(Iid* lower, Iid* upper, IxIndexHandle* ih) {
-        int key_size = index_meta_.col_tot_len;
-        auto tab_meta = sm_manager_->db_.get_table(tab_name_);
-        char* key = new char[key_size];
-        memset(key, 0, key_size);
-        int i = 0;
-        int offset = 0;
-        int num_key = static_cast<int>(conds_.size());
-
-        for (auto& cond: conds_) {
-            int col_len = tab_meta.get_col(cond.lhs_col.col_name)->len;
-            memcpy(key + offset, cond.rhs_val.raw->data, col_len);
-
-            if (i == num_key - 1) {
-                switch (cond.op) {
-                    case OP_GT:
-                        *lower = ih->upper_bound(key, num_key);
-                        *upper = ih->leaf_end();
-                        break;
-                    case OP_GE:
-                        *lower = ih->lower_bound(key, num_key);
-                        *upper = ih->leaf_end();
-                        break;
-                    case OP_LT:
-                        *lower = ih->leaf_begin();
-                        *upper = ih->lower_bound(key, num_key);
-                        break;
-                    case OP_LE:
-                        *lower = ih->leaf_begin();
-                        *upper = ih->upper_bound(key, num_key);
-                        break;
-                    case OP_EQ:
-                        *lower = ih->lower_bound(key, num_key);
-                        *upper = ih->upper_bound(key, num_key);
-                    default:
-                        break;
-                }
+    inline std::pair<Iid, Iid> get_bound() {
+        if (conds_.empty()) {
+            for (auto& col: index_meta_.cols) {
+                Value value;
+                value.generate_max(col.type, col.len);
             }
 
-            offset += col_len;
-            i++;
-        }
-    }
-
-    void GetBoundSingle(Iid* lower, Iid* upper, IxIndexHandle* ih) {
-        int key_size = index_meta_.col_tot_len;
-        auto tab_meta = sm_manager_->db_.get_table(tab_name_);
-        char* key = new char[key_size];
-        int num_key = 1;
-
-        if (conds_.size() == 1) {
-            auto cond = conds_[0];
-            int col_len = tab_meta.get_col(cond.lhs_col.col_name)->len;
-
-            memset(key, 0, key_size);
-            memcpy(key, cond.rhs_val.raw->data, col_len);
-
-            if (cond.op == OP_EQ) {
-                *lower = ih->lower_bound(key, num_key);
-                *upper = ih->upper_bound(key, num_key);
-            } else if (cond.op == OP_LE) {
-                *lower = ih->leaf_begin();
-                *upper = ih->upper_bound(key, num_key);
-            } else if (cond.op == OP_LT) {
-                *lower = ih->leaf_begin();
-                *upper = ih->lower_bound(key, num_key);
-            } else if (cond.op == OP_GE) {
-                *lower = ih->lower_bound(key, num_key);
-                *upper = ih->leaf_end();
-            } else if (cond.op == OP_GT) {
-                *lower = ih->upper_bound(key, num_key);
-                *upper = ih->leaf_end();
+            for (auto& col: index_meta_.cols) {
+                Value value;
+                value.generate_min(col.type, col.len);
             }
-        } else {
+
+            return std::make_pair(ih_->leaf_begin(), ih_->leaf_end());
+        }
+
+        Iid lower_bound{};
+        Iid upper_bound{};
+        int match_lower = 0;
+        int match_upper = 0;
+        CompOp lower_comp = OP_EQ;
+        CompOp upper_comp = OP_EQ;
+        std::vector<Value> lower_values;
+        std::vector<Value> upper_values;
+
+        for (auto& index_col: index_meta_.cols) {
             for (auto& cond: conds_) {
-                int col_len = tab_meta.get_col(cond.lhs_col.col_name)->len;
-                memset(key, 0, key_size);
-                memcpy(key, cond.rhs_val.raw->data, col_len);
-                switch (cond.op) {
-                    case OP_GT:
-                        *lower = ih->upper_bound(key, num_key); break;
-                    case OP_GE:
-                        *lower = ih->lower_bound(key, num_key); break;
-                    case OP_LT:
-                        *upper = ih->lower_bound(key, num_key); break;
-                    case OP_LE:
-                        *upper = ih->upper_bound(key, num_key); break;
-                    default:
-                        break;
+                if (index_col.name == cond.lhs_col.col_name) {
+                    if (cond.op == OP_EQ) {
+                        lower_values.push_back(cond.rhs_val);
+                        upper_values.push_back(cond.rhs_val);
+                        match_lower++; match_upper++;
+                    } else if (cond.op == OP_GT || cond.op == OP_GE) {
+                        lower_values.push_back(cond.rhs_val);
+                        match_lower++; lower_comp = cond.op;
+                    } else if (cond.op == OP_LT || cond.op == OP_LE) {
+                        upper_values.push_back(cond.rhs_val);
+                        match_upper++; upper_comp = cond.op;
+                    }
                 }
             }
         }
+
+        assert( match_lower == match_upper ||
+                match_upper - 1 == match_lower ||
+                match_lower - 1 == match_upper );
+
+        for (int i = match_lower; i < index_meta_.col_num; i++) {
+            Value value;
+            ColMeta meta = index_meta_.cols[i];
+            if (lower_comp == OP_GT) {
+                value.generate_max(meta.type, meta.len);
+            } else {
+                value.generate_min(meta.type, meta.len);
+            }
+            lower_values.push_back(value);
+        }
+
+        for (int i = match_upper; i < index_meta_.col_num; i++) {
+            Value value;
+            ColMeta meta = index_meta_.cols[i];
+            if (upper_comp == OP_LT) {
+                value.generate_min(meta.type, meta.len);
+            } else {
+                value.generate_max(meta.type, meta.len);
+            }
+            upper_values.push_back(value);
+        }
+
+        if (upper_comp == OP_LT) {
+            upper_bound = ih_->lower_bound(upper_values);
+        } else {
+            upper_bound = ih_->upper_bound(upper_values);
+        }
+
+        if (lower_comp == OP_GT) {
+            lower_bound = ih_->upper_bound(lower_values);
+        } else {
+            lower_bound = ih_->lower_bound(lower_values);
+        }
+
+        return std::make_pair(lower_bound, upper_bound);
+    }
+
+
+    void print_key(const char* key, std::string description) {
+        std::cout << description << ": ";
+        int offset = 0;
+        for (auto& col: index_meta_.cols) {
+            switch (col.type) {
+                case TYPE_INT:
+                {
+                    int value = *(int*)(key + offset);
+                    std::cout << value << " ";
+                    break;
+                }
+                case TYPE_FLOAT:
+                {
+                    float value = *(float*)(key + offset);
+                    std::cout << value << " ";
+                    break;
+                }
+                case TYPE_STRING:
+                {
+                    std::string value = std::string(key + offset, col.len);
+                    value.resize(strlen(key + offset));
+                    std::cout << value << " ";
+                    break;
+                }
+            }
+            offset += col.len;
+        }
+        std::cout << '\n';
     }
 };

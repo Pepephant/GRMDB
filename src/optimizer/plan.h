@@ -45,7 +45,8 @@ typedef enum PlanTag{
     T_NestLoop,
     T_SortMerge,    // sort merge join
     T_Sort,
-    T_Projection
+    T_Projection,
+    T_Values
 } PlanTag;
 
 // 查询执行计划
@@ -54,6 +55,20 @@ class Plan
 public:
     PlanTag tag;
     virtual ~Plan() = default;
+};
+
+class ValuesPlan: public Plan {
+public:
+    ValuesPlan(PlanTag tag, std::vector<Value> values, TabCol col, SmManager* sm_manager) {
+        Plan::tag = tag;
+        TabMeta tab = sm_manager->db_.get_table(col.tab_name);
+        col_ = *tab.get_col(col.col_name);
+        values_ = std::move(values);
+    }
+
+    PlanTag tag_;
+    std::vector<Value> values_;
+    ColMeta col_;
 };
 
 class ScanPlan : public Plan
@@ -149,18 +164,19 @@ class ProjectionPlan : public Plan
 class SortPlan : public Plan
 {
     public:
-        SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan, TabCol sel_col, bool is_desc)
+        SortPlan(PlanTag tag, std::shared_ptr<Plan> subplan, TabCol sel_col, bool is_desc, SmManager* sm_manager)
         {
             Plan::tag = tag;
             subplan_ = std::move(subplan);
             sel_col_ = sel_col;
             is_desc_ = is_desc;
+            sm_manager_ = sm_manager;
         }
         ~SortPlan(){}
         std::shared_ptr<Plan> subplan_;
         TabCol sel_col_;
         bool is_desc_;
-        
+        SmManager* sm_manager_;
 };
 
 // dml语句，包括insert; delete; update语句　

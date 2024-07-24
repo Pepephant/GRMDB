@@ -431,6 +431,11 @@ expr:
         $$ = std::make_shared<Subquery>($2);
         $$ = std::static_pointer_cast<Expr>($$);
     }
+    |   '(' valueList ')'
+    {
+        $$ = std::make_shared<ValueList>($2);
+        $$ = std::static_pointer_cast<Expr>($$);
+    }
     ;
 
 setClauses:

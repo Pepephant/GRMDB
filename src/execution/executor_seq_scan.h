@@ -47,18 +47,32 @@ class SeqScanExecutor : public AbstractExecutor {
         context_ = context;
 
         fed_conds_ = conds_;
+
+        for (auto& cond: conds_) {
+            ColType lhs = tab.get_col(cond.lhs_col.col_name)->type;
+            ColType rhs = cond.rhs_val.type;
+            if (!Value::TypeCompatible(lhs, rhs)) {
+                throw IncompatibleTypeError(coltype2str(lhs), coltype2str(rhs));
+            }
+        }
+
+        context_->lock_mgr_->lock_IS_on_table(context_->txn_,fh_->GetFd());
     }
 
     void beginTuple() override {
 
         scan_ = std::make_unique<RmScan>(fh_);
         rid_ = scan_->rid();
-
+        auto lock_manager = context_->lock_mgr_;
         while (!scan_->is_end()) {
+            // lock_manager->lock_IS_on_table(context_->txn_,fh_->GetFd());
+            // if(lock_manager->lock_shared_on_record(context_->txn_,rid_,fh_->GetFd())){}
             auto tuple = fh_->get_record(rid_, context_);
             if (eval_condition(conds_, tuple.get())) {
                 last_rid_ = scan_->rid();
             }
+            // LockDataId lock_data_id = LockDataId(fh_->GetFd(),rid_,LockDataType::RECORD);
+            // lock_manager->unlock(context_->txn_, lock_data_id);
             scan_->next();
             rid_ = scan_->rid();
         }
@@ -68,11 +82,17 @@ class SeqScanExecutor : public AbstractExecutor {
         rid_ = scan_->rid();
 
         while (!scan_->is_end()) {
+            // lock_manager->lock_IS_on_table(context_->txn_,fh_->GetFd());
+            // if(lock_manager->lock_shared_on_record(context_->txn_,rid_,fh_->GetFd())){}
             auto tuple = fh_->get_record(rid_, context_);
             scan_->next();
             if (eval_condition(conds_, tuple.get())) {
+                // LockDataId lock_data_id = LockDataId(fh_->GetFd(),rid_,LockDataType::RECORD);
+                // lock_manager->unlock(context_->txn_, lock_data_id);
                 return ;
             }
+            // LockDataId lock_data_id = LockDataId(fh_->GetFd(),rid_,LockDataType::RECORD);
+            // lock_manager->unlock(context_->txn_, lock_data_id);
             rid_ = scan_->rid();
         }
 
@@ -88,11 +108,14 @@ class SeqScanExecutor : public AbstractExecutor {
 
         while (!scan_->is_end()) {
             rid_ = scan_->rid();
+            // if(lock_manager->lock_shared_on_record(context_->txn_,rid_,fh_->GetFd())){}
             auto tuple = fh_->get_record(rid_, context_);
             scan_->next();
             if (eval_condition(conds_, tuple.get())) {
                 return ;
             }
+            // LockDataId lock_data_id = LockDataId(fh_->GetFd(),rid_,LockDataType::RECORD);
+            // lock_manager->unlock(context_->txn_, lock_data_id);
         }
     }
 

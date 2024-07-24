@@ -12,6 +12,8 @@ See the Mulan PSL v2 for more details. */
 
 #include "ix_defs.h"
 #include "transaction/transaction.h"
+#include "system/sm_meta.h"
+
 #define TEST_INDEX
 // #define TEST_INDEX_INSERT
 // #define TEST_INDEX_DELETE
@@ -19,6 +21,27 @@ See the Mulan PSL v2 for more details. */
 enum class Operation { FIND = 0, INSERT, DELETE };  // 三种操作：查找、插入、删除
 
 static const bool binary_search = false;
+
+inline int ix_compare(const char *a, const Value& b_val, ColType type, int col_len) {
+    Value a_val;
+    a_val.type = type;
+    switch (type) {
+        case TYPE_INT:
+            a_val.int_val = *(int*)a;
+        case TYPE_FLOAT:
+            a_val.float_val = *(float*)a;
+        case TYPE_STRING:
+            a_val.str_val = std::string(a, col_len);
+            a_val.str_val.resize(strlen(a_val.str_val.c_str()));
+    }
+
+    if (Value::ValueComp(a_val, b_val, OP_LT)) {
+        return -1;
+    } if (Value::ValueComp(a_val, b_val, OP_GT)) {
+        return 1;
+    }
+    return 0;
+}
 
 inline int ix_compare(const char *a, const char *b, ColType type, int col_len) {
     switch (type) {
@@ -45,6 +68,26 @@ inline int ix_compare(const char* a, const char* b, const std::vector<ColType>& 
         int res = ix_compare(a + offset, b + offset, col_types[i], col_lens[i]);
         if(res != 0) return res;
         offset += col_lens[i];
+    }
+    return 0;
+}
+
+inline int ix_compare(const char* a, const std::vector<Value>& b, const std::vector<ColType>& col_types, const std::vector<int>& col_lens) {
+    int offset = 0;
+    for(size_t i = 0; i < col_types.size(); ++i) {
+        int res = ix_compare(a + offset, b[i], col_types[i], col_lens[i]);
+        if(res != 0) return res;
+        offset += col_lens[i];
+    }
+    return 0;
+}
+
+inline int ix_compare(const char* a, const char* b, const std::vector<ColMeta>& cols) {
+    int offset = 0;
+    for (size_t i = 0; i < cols.size(); ++i) {
+        int res = ix_compare(a + offset, b + offset, cols[i].type, cols[i].len);
+        if(res != 0) return res;
+        offset += cols[i].len;
     }
     return 0;
 }
@@ -113,13 +156,21 @@ class IxNodeHandle {
 
     int lower_bound(const char *target) const;
 
+    int lower_bound(const std::vector<Value>& target) const;
+
     int upper_bound(const char *target) const;
+
+    int upper_bound(const std::vector<Value>& target) const;
 
     void insert_pairs(int pos, const char *key, const Rid *rid, int n);
 
     page_id_t internal_lookup(const char *key);
 
+    page_id_t internal_lookup(const std::vector<Value>& key);
+
     bool leaf_lookup(const char *key, Rid **value);
+
+    bool leaf_lookup(const std::vector<Value>& key, Rid **value);
 
     int insert(const char *key, const Rid &value);
 
@@ -229,83 +280,15 @@ class IxIndexHandle {
 
     Iid upper_bound(const char *key);
 
-    Iid lower_bound(const char *key, int size);
+    Iid lower_bound(const std::vector<Value>& key);
 
-    Iid upper_bound(const char *key, int size);
+    Iid upper_bound(const std::vector<Value>& key);
 
     Iid leaf_end() const;
 
     Iid leaf_begin() const;
 
-#ifdef TEST_INDEX
-    IxFileHdr* getFileHdr() const { return file_hdr_; };
-
-    void check_child(const char* key, page_id_t root_id) {
-        auto node = fetch_node(root_id);
-
-        if (!node->is_leaf_page()) {
-            for (int i = 0; i < node->get_size(); i++) {
-                auto child = fetch_node(node->value_at(i));
-                if (child->get_parent_page_no() != node->get_page_no()) {
-                    std::cout << "When " << key << ", " << node->get_page_no() << "->" << node->value_at(i);
-                    std::cout << " and " << child->get_page_no() << "->" << child->get_parent_page_no() << '\n';
-                }
-                unpin_node_page(child, false);
-            }
-        }
-
-        if (!node->is_leaf_page()) {
-            for (int i = 0; i < node->get_size(); i++) {
-                check_child(key, node->value_at(i));
-            }
-        }
-        unpin_node_page(node, false);
-    }
-
-    void traverse(page_id_t root_id) {
-        auto node = fetch_node(root_id);
-        node->show_internal("");
-
-        if (!node->is_leaf_page()) {
-            for (int i = 0; i < node->get_size(); i++) {
-                traverse(node->value_at(i));
-            }
-        }
-
-        unpin_node_page(node, false);
-    }
-
-    void show_tree() {
-        traverse(file_hdr_->root_page_);
-        std::cout << "\n";
-    }
-
-    void check_tree(const char* key) {
-        check_child(key, file_hdr_->root_page_);
-    }
-
-    void check_scan() {
-        std::cout << "Start: " << file_hdr_->first_leaf_ << ", ";
-        std::cout << "End: " << file_hdr_->last_leaf_ << '\n';
-        auto cur_id = file_hdr_->first_leaf_;
-        for (int i = 0; i < file_hdr_->num_pages_; i++) {
-            auto node = fetch_node(cur_id);
-            auto prev_id = node->get_prev_leaf();
-            auto next_id = node->get_next_leaf();
-
-            std::string desc = "Prev: " + std::to_string(prev_id);
-            desc += ", Next: " + std::to_string(next_id) + ", ";
-            node->show_internal(desc);
-
-            unpin_node_page(node, false);
-            if (cur_id == file_hdr_->last_leaf_) {
-                break;
-            }
-            cur_id = next_id;
-        }
-        std::cout << "\n";
-    }
-#endif
+    void get_key(Iid iid, char *key);
 
    private:
     // 辅助函数

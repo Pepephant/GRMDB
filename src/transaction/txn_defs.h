@@ -44,13 +44,19 @@ class WriteRecord {
     WriteRecord(WType wtype, const std::string &tab_name, const Rid &rid)
         : wtype_(wtype), tab_name_(tab_name), rid_(rid) {}
 
-    // constructor for delete & update operation
+    // constructor for delete or insert
     WriteRecord(WType wtype, const std::string &tab_name, const Rid &rid, const RmRecord &record)
-        : wtype_(wtype), tab_name_(tab_name), rid_(rid), record_(record) {}
+        : wtype_(wtype), tab_name_(tab_name), rid_(rid), record_(std::make_shared<RmRecord>(record)) {}
 
+    // update operation
+    WriteRecord(WType wtype, const std::string &tab_name, const Rid &rid, const RmRecord &record,const RmRecord &record_old)
+        : wtype_(wtype), tab_name_(tab_name), rid_(rid), record_(std::make_shared<RmRecord>(record)),
+        record_old_(std::make_shared<RmRecord>(record_old)) { }
     ~WriteRecord() = default;
 
-    inline RmRecord &GetRecord() { return record_; }
+    inline RmRecord &GetRecord() { return *record_; }
+
+    inline RmRecord &GetOldRecord() { return *record_old_; }
 
     inline Rid &GetRid() { return rid_; }
 
@@ -58,11 +64,13 @@ class WriteRecord {
 
     inline std::string &GetTableName() { return tab_name_; }
 
+    std::shared_ptr<RmRecord> record_{nullptr};
+    std::shared_ptr<RmRecord> record_old_{nullptr};
+
    private:
     WType wtype_;
     std::string tab_name_;
     Rid rid_;
-    RmRecord record_;
 };
 
 /* 多粒度锁，加锁对象的类型，包括记录和表 */
