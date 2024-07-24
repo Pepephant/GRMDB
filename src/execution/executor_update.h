@@ -38,12 +38,14 @@ class UpdateExecutor : public AbstractExecutor {
         fh_ = sm_manager_->fhs_.at(tab_name).get();
         conds_ = conds;
         rids_ = rids;
+        cols_ = tab_.cols;
         context_ = context;
+        context_->lock_mgr_->lock_exclusive_on_table(context_->txn_,fh_->GetFd());
     }
 
     std::unique_ptr<RmRecord> Next() override {
-        cols_ = tab_.cols;
         for (auto& rid: rids_) {
+            // if(context_->lock_mgr_->lock_exclusive_on_record(context_->txn_,rid,fh_->GetFd())){}
             auto tuple = fh_->get_record(rid, context_);
             RmRecord old_rec = *(tuple);
             RmRecord new_rec = *(tuple);
@@ -75,12 +77,22 @@ class UpdateExecutor : public AbstractExecutor {
                     auto offset = tab_.get_col(index.cols[i].name)->offset;
                     memcpy(new_key + index.cols[i].offset, new_rec.data + offset, index.cols[i].len);
                 }
-                ih->insert_entry(new_key, rid, context_->txn_);
-                ih->delete_entry(old_key, context_->txn_);
+                try {
+                    ih->delete_entry(old_key, context_->txn_);
+                    ih->insert_entry(new_key, rid, context_->txn_);
+                } catch (IndexEntryExistsError) {
+                    ih->insert_entry(old_key, rid, context_->txn_);
+                    context_->txn_mgr_->abort(context_->txn_, context_->log_mgr_);
+                    throw ;
+                }
             }
 
             fh_->update_record(rid, new_rec.data, context_);
+            WriteRecord writeRecord = WriteRecord(WType::UPDATE_TUPLE,tab_name_,rid,new_rec,old_rec);
+            context_->txn_->append_write_record(writeRecord);
+            // context_->lock_mgr_->unlock(context_->txn_,LockDataId(fh_->GetFd(),rid,LockDataType::RECORD));
         }
+
         return nullptr;
     }
 

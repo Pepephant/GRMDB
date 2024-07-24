@@ -24,8 +24,10 @@ See the Mulan PSL v2 for more details. */
 #include "execution/executor_delete.h"
 #include "execution/execution_sort.h"
 #include "execution/executor_aggregation.h"
-#include "execution/exection_subquery.h"
+#include "execution/execution_subquery.h"
+#include "execution/execution_sort_merge.h"
 #include "common/common.h"
+#include "execution/execution_values.h"
 
 typedef enum portalTag{
     PORTAL_Invalid_Query = 0,
@@ -173,16 +175,23 @@ class Portal
         } else if(auto x = std::dynamic_pointer_cast<JoinPlan>(plan)) {
             std::unique_ptr<AbstractExecutor> left = convert_plan_executor(x->left_, context);
             std::unique_ptr<AbstractExecutor> right = convert_plan_executor(x->right_, context);
-            std::unique_ptr<AbstractExecutor> join = std::make_unique<NestedLoopJoinExecutor>(
-                                std::move(left), 
-                                std::move(right), std::move(x->conds_));
+            std::unique_ptr<AbstractExecutor> join;
+            if (x->tag == T_NestLoop) {
+                join = std::make_unique<NestedLoopJoinExecutor>(std::move(left), std::move(right),
+                                                                std::move(x->conds_));
+            } else if (x->tag == T_SortMerge) {
+                join = std::make_unique<SortMergeExecutor>(std::move(left), std::move(right),
+                                                                std::move(x->conds_));
+            }
             return join;
         } else if(auto x = std::dynamic_pointer_cast<SortPlan>(plan)) {
             return std::make_unique<SortExecutor>(convert_plan_executor(x->subplan_, context), 
-                                            x->sel_col_, x->is_desc_);
+                                            x->sel_col_, x->is_desc_, x->sm_manager_);
         } else if (auto x = std::dynamic_pointer_cast<AggrPlan>(plan)) {
             return std::make_unique<AggregateExecutor>(convert_plan_executor(x->subplan_, context),
                                             x->aggregates_, x->group_bys_, x->havings_, context);
+        } else if (auto x = std::dynamic_pointer_cast<ValuesPlan>(plan)) {
+            return std::make_unique<ValuesExecutor>(x->values_, x->col_, context);
         }
         return nullptr;
     }

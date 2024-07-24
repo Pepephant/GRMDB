@@ -9,6 +9,7 @@ MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
 #pragma once
+
 #include "execution_defs.h"
 #include "execution_manager.h"
 #include "executor_abstract.h"
@@ -16,7 +17,7 @@ See the Mulan PSL v2 for more details. */
 #include "system/sm.h"
 
 class InsertExecutor : public AbstractExecutor {
-   private:
+private:
     TabMeta tab_;                   // 表的元数据
     std::vector<Value> values_;     // 需要插入的数据
     RmFileHandle *fh_;              // 表的数据文件句柄
@@ -24,7 +25,7 @@ class InsertExecutor : public AbstractExecutor {
     Rid rid_;                       // 插入的位置，由于系统默认插入时不指定位置，因此当前rid_在插入后才赋值
     SmManager *sm_manager_;
 
-   public:
+public:
     InsertExecutor(SmManager *sm_manager, const std::string &tab_name, std::vector<Value> values, Context *context) {
         sm_manager_ = sm_manager;
         tab_ = sm_manager_->db_.get_table(tab_name);
@@ -38,6 +39,8 @@ class InsertExecutor : public AbstractExecutor {
     };
 
     std::unique_ptr<RmRecord> Next() override {
+        // 直接锁表，解决幻读
+        context_->lock_mgr_->lock_exclusive_on_table(context_->txn_,fh_->GetFd());
         // Make record buffer
         RmRecord rec(fh_->get_file_hdr().record_size);
         for (size_t i = 0; i < values_.size(); i++) {
@@ -56,23 +59,30 @@ class InsertExecutor : public AbstractExecutor {
         }
         // Insert into record file
         rid_ = fh_->insert_record(rec.data, context_);
-        
+
+        auto writeRecord = WriteRecord(WType::INSERT_TUPLE, tab_.name, rid_, rec);
+        context_->txn_->append_write_record(writeRecord);
+
         // Insert into index
-        for(auto& index: tab_.indexes) {
+        for (auto &index: tab_.indexes) {
             auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
-            char* key = new char[index.col_tot_len];
-            for(size_t i = 0; i < index.col_num; ++i) {
+            char *key = new char[index.col_tot_len];
+            for (size_t i = 0; i < index.col_num; ++i) {
                 auto offset = tab_.get_col(index.cols[i].name)->offset;
                 memcpy(key + index.cols[i].offset, rec.data + offset, index.cols[i].len);
             }
             try {
+                // TODO 处理并发上锁
                 ih->insert_entry(key, rid_, context_->txn_);
             } catch (IndexEntryExistsError error) {
                 fh_->delete_record(rid_, context_);
-                throw ;
+                context_->txn_->get_write_set()->pop_back();
+                throw;
             }
         }
+        // context_->lock_mgr_->unlock(context_->txn_,LockDataId(fh_->GetFd(),LockDataType::RECORD));
         return nullptr;
     }
+
     Rid &rid() override { return rid_; }
 };

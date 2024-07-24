@@ -37,14 +37,19 @@ class DeleteExecutor : public AbstractExecutor {
         conds_ = conds;
         rids_ = rids;
         context_ = context;
+        context_->lock_mgr_->lock_exclusive_on_table(context_->txn_,fh_->GetFd());
     }
 
     std::unique_ptr<RmRecord> Next() override {
         cols_ = tab_.cols;
         for (auto& rid: rids_) {
+            // if(context_->lock_mgr_->lock_exclusive_on_record(context_->txn_,rid,fh_->GetFd())){}
             auto tuple = fh_->get_record(rid, context_);
             if (eval_condition(conds_, tuple.get())) {
                 fh_->delete_record(rid, context_);
+
+                WriteRecord writeRecord = WriteRecord(WType::DELETE_TUPLE,tab_.name,rid,*tuple.get());
+                context_->txn_->append_write_record(writeRecord);
             }
 
             RmRecord old_rec = *(tuple);
@@ -56,8 +61,10 @@ class DeleteExecutor : public AbstractExecutor {
                     auto offset = tab_.get_col(index.cols[i].name)->offset;
                     memcpy(old_key + index.cols[i].offset, old_rec.data + offset, index.cols[i].len);
                 }
+                // 处理并发上锁 TODO
                 ih->delete_entry(old_key, context_->txn_);
             }
+            // context_->lock_mgr_->unlock(context_->txn_,LockDataId(fh_->GetFd(),rid,LockDataType::RECORD));
         }
         return nullptr;
     }

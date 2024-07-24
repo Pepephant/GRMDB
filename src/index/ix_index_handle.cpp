@@ -46,6 +46,33 @@ int IxNodeHandle::lower_bound(const char *target) const {
     return -1;
 }
 
+int IxNodeHandle::lower_bound(const std::vector<Value>& target) const {
+    // Todo:
+    // 查找当前节点中第一个大于等于target的key，并返回key的位置给上层
+    // 提示: 可以采用多种查找方式，如顺序遍历、二分查找等；使用ix_compare()函数进行比较
+
+    int l = (is_leaf_page()) ? 0 : 1;
+    int r = get_size() - 1;
+    auto col_types = file_hdr->col_types_;
+    auto col_lens = file_hdr->col_lens_;
+
+    while (l < r) {
+        int m = (l + r)/2;
+        int judge = ix_compare(get_key(m), target, col_types, col_lens);
+        if (judge < 0) {
+            l = m + 1;
+        } else {
+            r = m;
+        }
+    }
+
+    int judge = ix_compare(get_key(l), target, col_types, col_lens);
+    if (judge >= 0) {
+        return l;
+    }
+    return -1;
+}
+
 /**
  * @brief 在当前node中查找第一个>target的key_idx
  *
@@ -57,6 +84,29 @@ int IxNodeHandle::upper_bound(const char *target) const {
     // 查找当前节点中第一个大于target的key，并返回key的位置给上层
     // 提示: 可以采用多种查找方式：顺序遍历、二分查找等；使用ix_compare()函数进行比较
 
+    int l = (is_leaf_page()) ? 0 : 1;
+    int r = get_size() - 1;
+    auto col_types = file_hdr->col_types_;
+    auto col_lens = file_hdr->col_lens_;
+
+    while (l < r) {
+        int m = (l + r)/2;
+        int judge = ix_compare(get_key(m), target, col_types, col_lens);
+        if (judge <= 0) {
+            l = m + 1;
+        } else {
+            r = m;
+        }
+    }
+
+    int judge = ix_compare(get_key(l), target, col_types, col_lens);
+    if (judge > 0) {
+        return l;
+    }
+    return -1;
+}
+
+int IxNodeHandle::upper_bound(const std::vector<Value> &target) const {
     int l = (is_leaf_page()) ? 0 : 1;
     int r = get_size() - 1;
     auto col_types = file_hdr->col_types_;
@@ -135,6 +185,22 @@ page_id_t IxNodeHandle::internal_lookup(const char *key) {
     return get_rid(pos)->page_no;
 }
 
+page_id_t IxNodeHandle::internal_lookup(const std::vector<Value>& key) {
+    int pos = lower_bound(key);
+
+    if (pos == -1) {
+        pos = get_size() - 1;
+    } else {
+        auto col_types = file_hdr->col_types_;
+        auto col_lens = file_hdr->col_lens_;
+        if (ix_compare(get_key(pos), key, col_types, col_lens) != 0) {
+            pos = pos - 1;
+        }
+    }
+
+    return get_rid(pos)->page_no;
+}
+
 /**
  * @brief 在指定位置插入n个连续的键值对
  * 将key的前n位插入到原来keys中的pos位置；将rid的前n位插入到原来rids中的pos位置
@@ -186,13 +252,16 @@ int IxNodeHandle::insert(const char *key, const Rid &value) {
     int pos;
     auto key_size = file_hdr->col_tot_len_;
 
-    pos = lower_bound(key);
-    if (pos == -1) {
-        pos = get_size();
+    if (page_hdr->num_key == 0) {
+        pos = 0;
     } else {
-        if (memcmp(get_key(pos), key, key_size) == 0) {
-            throw IndexEntryExistsError();
-            return page_hdr->num_key;
+        pos = lower_bound(key);
+        if (pos == -1) {
+            pos = get_size();
+        } else {
+            if (memcmp(get_key(pos), key, key_size) == 0) {
+                throw IndexEntryExistsError();
+            }
         }
     }
 
@@ -817,6 +886,37 @@ Iid IxIndexHandle::lower_bound(const char *key) {
     return iid;
 }
 
+
+Iid IxIndexHandle::lower_bound(const std::vector<Value> &key) {
+    Iid iid;
+    auto root_node = fetch_node(file_hdr_->root_page_);
+
+    while (!root_node->is_leaf_page()) {
+        auto child_page = root_node->internal_lookup(key);
+        unpin_node_page(root_node, false);
+        root_node = fetch_node(child_page);
+    }
+
+    auto index = root_node->lower_bound(key);
+
+    if (index == -1) {
+        iid.page_no = root_node->get_page_no();
+        if (iid.page_no == file_hdr_->last_leaf_) {
+            iid.slot_no = root_node->get_size();
+        } else {
+            iid.page_no = root_node->get_next_leaf();
+            iid.slot_no = 0;
+        }
+    } else {
+        iid.page_no = root_node->get_page_no();
+        iid.slot_no = index;
+    }
+
+    unpin_node_page(root_node, false);
+
+    return iid;
+}
+
 /**
  * @brief FindLeafPage + upper_bound
  *
@@ -849,50 +949,59 @@ Iid IxIndexHandle::upper_bound(const char *key) {
     return iid;
 }
 
-Iid IxIndexHandle::lower_bound(const char *key, int size) {
-    if (size == file_hdr_->col_num_) {
-        return lower_bound(key);
+Iid IxIndexHandle::upper_bound(const std::vector<Value> &key) {
+    Iid iid;
+    auto root_node = fetch_node(file_hdr_->root_page_);
+
+    while (!root_node->is_leaf_page()) {
+        auto child_page = root_node->internal_lookup(key);
+        unpin_node_page(root_node, false);
+        root_node = fetch_node(child_page);
     }
 
-    int offset = 0;
-    for (int i = 0; i < size; i++) {
-        offset += file_hdr_->col_lens_[i];
+    auto index = root_node->upper_bound(key);
+
+    if (index == -1) {
+        iid.page_no = root_node->get_page_no();
+        if (iid.page_no == file_hdr_->last_leaf_) {
+            iid.slot_no = root_node->get_size();
+        } else {
+            iid.page_no = root_node->get_next_leaf();
+            iid.slot_no = 0;
+        }
+    } else {
+        iid.page_no = root_node->get_page_no();
+        iid.slot_no = index;
     }
-    char* new_key = new char [file_hdr_->col_tot_len_];
-    memcpy(new_key, key, offset);
-    for (int i = size; i < file_hdr_->col_num_; i++) {
-        Value min_val;
-        int col_len = file_hdr_->col_lens_[i];
-        min_val.generate_min(file_hdr_->col_types_[i], col_len);
-        memcpy(new_key + offset, min_val.raw->data, col_len);
-    }
-    return lower_bound(new_key);
+
+    unpin_node_page(root_node, false);
+
+    return iid;
 }
 
-Iid IxIndexHandle::upper_bound(const char *key, int size) {
-    if (size == file_hdr_->col_num_) {
-        return upper_bound(key);
+void IxIndexHandle::get_key(Iid iid, char *key) {
+    if (iid == leaf_end()) {
+        int offset = 0;
+        for (int i = 0; i < file_hdr_->col_types_.size(); i++) {
+            Value value; int len = file_hdr_->col_lens_[i];
+            value.generate_max(file_hdr_->col_types_[i], len);
+            memcpy(key + offset, value.raw->data, len);
+            offset = len;
+        }
+        return ;
     }
-
-    int offset = 0;
-    for (int i = 0; i < size; i++) {
-        offset += file_hdr_->col_lens_[i];
+    IxNodeHandle *node = fetch_node(iid.page_no);
+    memcpy(key, node->get_key(iid.slot_no), file_hdr_->col_tot_len_);
+    if (iid.slot_no >= node->get_size()) {
+        throw IndexEntryNotFoundError();
     }
-    char* new_key = new char [file_hdr_->col_tot_len_];
-    memcpy(new_key, key, offset);
-    for (int i = size; i < file_hdr_->col_num_; i++) {
-        Value max_val;
-        int col_len = file_hdr_->col_lens_[i];
-        max_val.generate_max(file_hdr_->col_types_[i], col_len);
-        memcpy(new_key + offset, max_val.raw->data, col_len);
-    }
-    return upper_bound(new_key);
+    buffer_pool_manager_->unpin_page(node->get_page_id(), false);  // unpin it!
 }
 
 /**
  * @brief 指向最后一个叶子的最后一个结点的后一个
  * 用处在于可以作为IxScan的最后一个
- *
+ *./
  * @return Iid
  */
 Iid IxIndexHandle::leaf_end() const {

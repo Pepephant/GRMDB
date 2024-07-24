@@ -106,6 +106,7 @@ struct TabMeta {
     TabMeta(const TabMeta &other) {
         name = other.name;
         for(auto col : other.cols) cols.push_back(col);
+        for (auto index: other.indexes) indexes.push_back(index);
     }
 
     /* 判断当前表中是否存在名为col_name的字段 */

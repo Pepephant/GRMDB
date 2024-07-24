@@ -217,13 +217,15 @@ void SmManager::create_table(const std::string& tab_name, const std::vector<ColD
         curr_offset += col_def.len;
         tab.cols.push_back(col);
     }
+
     // Create & open record file
     int record_size = curr_offset;  // record_size就是col meta所占的大小（表的元数据也是以记录的形式进行存储的）
     rm_manager_->create_file(tab_name, record_size);
     db_.tabs_[tab_name] = tab;
     // fhs_[tab_name] = rm_manager_->open_file(tab_name);
-    fhs_.emplace(tab_name, rm_manager_->open_file(tab_name));
-
+    auto fh = rm_manager_->open_file(tab_name);
+    context->lock_mgr_->lock_exclusive_on_table(context->txn_,fh->GetFd());
+    fhs_.emplace(tab_name, std::move(fh));
     flush_meta();
 }
 
@@ -244,6 +246,8 @@ void SmManager::drop_table(const std::string& tab_name, Context* context) {
     }
 
     // 删除表中的文件和记录
+    context->lock_mgr_->lock_exclusive_on_table(context->txn_,fhs_[tab_name]->GetFd());
+
     rm_manager_->close_file(fhs_[tab_name].get());
     rm_manager_->destroy_file(tab_name);
     db_.tabs_.erase(tab_name);

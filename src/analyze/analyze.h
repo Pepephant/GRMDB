@@ -31,6 +31,7 @@ struct Subquery {
     TabCol lhs;
     CompOp op;
     bool in_clause {false};
+    bool value_list {false};
     std::shared_ptr<Query> sub;
 };
 

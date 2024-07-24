@@ -33,7 +33,7 @@ struct TabCol {
     }
 };
 
-enum AggrType { SUM, MAX, MIN, COUNT, COUNT_STAR };
+enum AggrType { SUM, MAX, MIN, COUNT, COUNT_STAR, NON_AGG };
 
 struct AggrCol {
     TabCol tab_col_;
@@ -87,38 +87,45 @@ struct Value {
     }
 
     void generate_max(ColType type, int len) {
+        this->type = type;
         switch (type) {
             case TYPE_INT:
                 int_val = INT32_MAX;
+                init_raw(len);
                 break;
             case TYPE_FLOAT:
                 float_val = FLT_MAX;
+                init_raw(len);
                 break;
             case TYPE_STRING:
-                str_val.resize(0);
                 str_val.resize(len, 126); // 最大的可打印字符
+                raw = std::make_shared<RmRecord>(len);
+                memset(raw->data, 126, len);
                 break;
             default:
                 break;
         }
-        init_raw(len);
     }
 
     void generate_min(ColType type, int len) {
+        this->type = type;
         switch (type) {
             case TYPE_INT:
                 int_val = INT32_MIN;
+                init_raw(len);
                 break;
             case TYPE_FLOAT:
                 float_val = FLT_MIN;
+                init_raw(len);
                 break;
             case TYPE_STRING:
                 str_val = "";
+                raw = std::make_shared<RmRecord>(len);
+                memset(raw->data, 0, len);
                 break;
             default:
                 break;
         }
-        init_raw(len);
     }
 
     inline static bool ValueComp(Value left, Value right, CompOp op) {

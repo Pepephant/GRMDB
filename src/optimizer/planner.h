@@ -57,6 +57,9 @@ class Planner {
 
     std::shared_ptr<Plan> generate_aggr_plan(std::shared_ptr<Query> query, Context *context);
 
+    std::shared_ptr<Plan> generate_sort_merge_plan(std::shared_ptr<Plan> left, std::shared_ptr<Plan> right,
+                                                   std::vector<Condition> join_conds, std::vector<std::string> tables);
+
     // int get_indexNo(std::string tab_name, std::vector<Condition> curr_conds);
     bool get_index_cols(std::string tab_name, std::vector<Condition>& curr_conds, std::vector<std::string>& index_col_names);
 

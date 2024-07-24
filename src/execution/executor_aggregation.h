@@ -99,7 +99,9 @@ public:
                 agg_meta.type = TYPE_INT;
                 agg_meta.len = sizeof(int);
             } else if (agg_meta.type == TYPE_STRING) {
-                throw InternalError("Can't aggregate on a string column");
+                if (aggr.type_ == SUM) {
+                    throw InternalError("Can't aggregate SUM on a string column");
+                }
             }
             len_ += agg_meta.len;
             cols_.push_back(agg_meta);

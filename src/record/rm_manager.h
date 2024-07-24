@@ -22,6 +22,9 @@ class RmManager {
     DiskManager *disk_manager_;
     BufferPoolManager *buffer_pool_manager_;
 
+    std::mutex latch_;
+    std::unordered_set<std::string> tmp_files_;
+
    public:
     RmManager(DiskManager *disk_manager, BufferPoolManager *buffer_pool_manager)
         : disk_manager_(disk_manager), buffer_pool_manager_(buffer_pool_manager) {}
@@ -80,5 +83,45 @@ class RmManager {
         // 缓冲区的所有页刷到磁盘，注意这句话必须写在close_file前面
         buffer_pool_manager_->flush_all_pages(file_handle->fd_);
         disk_manager_->close_file(file_handle->fd_);
+    }
+
+    std::string create_tmp_file(const std::string& filename) {
+        std::scoped_lock lock(latch_);
+        int seq_no = 0;
+        std::string tmp_filename;
+
+//        while (tmp_files_.find(filename + "_" + std::to_string(seq_no) + ".tmp") != tmp_files_.end()) {
+//            seq_no++;
+//        }
+//
+//        tmp_filename = filename + "_" + std::to_string(seq_no) + ".tmp";
+//        tmp_files_.insert(tmp_filename);
+//        disk_manager_->create_file(tmp_filename);
+//        return tmp_filename;
+
+        tmp_filename = filename + ".tmp";
+
+        if (tmp_files_.find(tmp_filename) != tmp_files_.end()) {
+            int tmp_fd = disk_manager_->get_file_fd(tmp_filename);
+            tmp_files_.erase(tmp_filename);
+            disk_manager_->close_file(tmp_fd);
+            disk_manager_->destroy_file(tmp_filename);
+        }
+
+        tmp_files_.insert(tmp_filename);
+        disk_manager_->create_file(tmp_filename);
+        return tmp_filename;
+    }
+
+    int open_tmp_file(const std::string& filename) {
+        int fd = disk_manager_->open_file(filename);
+        return fd;
+    }
+
+    std::string destroy_tmp_file(int fd, const std::string& filename) {
+        std::scoped_lock lock(latch_);
+        tmp_files_.erase(filename);
+        disk_manager_->close_file(fd);
+        disk_manager_->destroy_file(filename);
     }
 };
