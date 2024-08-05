@@ -65,7 +65,8 @@ class UpdateExecutor : public AbstractExecutor {
             }
 
             // update the index
-            for(auto& index: tab_.indexes) {
+            for(int ix_no = 0; ix_no < tab_.indexes.size(); ix_no++) {
+                auto index = tab_.indexes[ix_no];
                 auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
                 char* old_key = new char[index.col_tot_len];
                 char* new_key = new char[index.col_tot_len];
@@ -80,17 +81,36 @@ class UpdateExecutor : public AbstractExecutor {
                 try {
                     ih->delete_entry(old_key, context_->txn_);
                     ih->insert_entry(new_key, rid, context_->txn_);
-                } catch (IndexEntryExistsError) {
-                    ih->insert_entry(old_key, rid, context_->txn_);
-                    context_->txn_mgr_->abort(context_->txn_, context_->log_mgr_);
-                    throw ;
+                } catch (IndexEntryExistsError& error) {
+                    for (int j = 0; j <= ix_no; j++) {
+                        index = tab_.indexes[j];
+                        ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
+                        char* key = new char[index.col_tot_len];
+                        for (size_t i = 0; i < index.col_num; ++i) {
+                            auto offset = tab_.get_col(index.cols[i].name)->offset;
+                            memcpy(key + index.cols[i].offset, old_rec.data + offset, index.cols[i].len);
+                        }
+                        ih->insert_entry(key, rid, context_->txn_);
+                    }
+                    context_->txn_->set_state(TransactionState::ABORTED);
+                    throw TransactionAbortException(context_->txn_->get_transaction_id(),
+                                                    AbortReason::CONSTRAINT_VIOLATION,
+                                                    error._msg);
                 }
             }
 
             fh_->update_record(rid, new_rec.data, context_);
             WriteRecord writeRecord = WriteRecord(WType::UPDATE_TUPLE,tab_name_,rid,new_rec,old_rec);
             context_->txn_->append_write_record(writeRecord);
-            // context_->lock_mgr_->unlock(context_->txn_,LockDataId(fh_->GetFd(),rid,LockDataType::RECORD));
+
+            txn_id_t txn_id = context_->txn_->get_transaction_id();
+            lsn_t prev_lsn = context_->txn_->get_prev_lsn();
+            context_->txn_->set_prev_lsn(context_->log_mgr_->get_lsn());
+
+            int first_page = fh_->get_file_hdr().first_free_page_no;
+            int num_pages = fh_->get_file_hdr().num_pages;
+            UpdateLogRecord log(txn_id, prev_lsn, old_rec, new_rec, rid, tab_name_, first_page, num_pages);
+            context_->log_mgr_->add_log_to_buffer(&log);
         }
 
         return nullptr;

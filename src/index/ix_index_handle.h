@@ -249,6 +249,9 @@ class IxIndexHandle {
     std::mutex root_latch_;
 
    public:
+    bool index_aborted_{false};
+
+   public:
     IxIndexHandle(DiskManager *disk_manager, BufferPoolManager *buffer_pool_manager, int fd);
 
     // for search
@@ -289,6 +292,9 @@ class IxIndexHandle {
     Iid leaf_begin() const;
 
     void get_key(Iid iid, char *key);
+    int get_fd() {return fd_;}
+
+    bool minus_one(Iid& iid);
 
    private:
     // 辅助函数

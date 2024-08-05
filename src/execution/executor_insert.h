@@ -40,7 +40,11 @@ public:
 
     std::unique_ptr<RmRecord> Next() override {
         // 直接锁表，解决幻读
-        context_->lock_mgr_->lock_exclusive_on_table(context_->txn_,fh_->GetFd());
+        if(tab_.indexes.empty()) {
+            context_->lock_mgr_->lock_exclusive_on_table(context_->txn_,fh_->GetFd());
+        } else {
+            context_->lock_mgr_->lock_IX_on_table(context_->txn_,fh_->GetFd());
+        }
         // Make record buffer
         RmRecord rec(fh_->get_file_hdr().record_size);
         for (size_t i = 0; i < values_.size(); i++) {
@@ -71,16 +75,29 @@ public:
                 auto offset = tab_.get_col(index.cols[i].name)->offset;
                 memcpy(key + index.cols[i].offset, rec.data + offset, index.cols[i].len);
             }
+            context_->lock_mgr_->lock_exclusive_on_record_gap(context_->txn_,rid_,fh_->GetFd(),key,index,ih);
             try {
                 // TODO 处理并发上锁
                 ih->insert_entry(key, rid_, context_->txn_);
-            } catch (IndexEntryExistsError error) {
+            } catch (IndexEntryExistsError& error) {
                 fh_->delete_record(rid_, context_);
                 context_->txn_->get_write_set()->pop_back();
-                throw;
+                context_->txn_->set_state(TransactionState::ABORTED);
+                throw TransactionAbortException(context_->txn_->get_transaction_id(),
+                                                AbortReason::CONSTRAINT_VIOLATION,
+                                                error._msg);
             }
         }
-        // context_->lock_mgr_->unlock(context_->txn_,LockDataId(fh_->GetFd(),LockDataType::RECORD));
+
+        txn_id_t txn_id = context_->txn_->get_transaction_id();
+        lsn_t prev_lsn = context_->txn_->get_prev_lsn();
+        context_->txn_->set_prev_lsn(context_->log_mgr_->get_lsn());
+
+        int first_page = fh_->get_file_hdr().first_free_page_no;
+        int num_pages = fh_->get_file_hdr().num_pages;
+        InsertLogRecord log(txn_id, prev_lsn, rec, rid_, tab_name_, first_page, num_pages);
+        context_->log_mgr_->add_log_to_buffer(&log);
+
         return nullptr;
     }
 

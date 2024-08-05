@@ -548,6 +548,8 @@ page_id_t IxIndexHandle::insert_entry(const char *key, const Rid &value, Transac
     // 3. 如果结点已满，分裂结点，并把新结点的相关信息插入父节点
     // 提示：记得unpin page；若当前叶子节点是最右叶子节点，则需要更新file_hdr_.last_leaf；记得处理并发的上锁
 
+    std::unique_lock<std::mutex> lock(root_latch_);
+
     if (is_empty()) {
         auto root_node = create_node();
         file_hdr_->root_page_ = root_node->get_page_no();
@@ -592,9 +594,9 @@ bool IxIndexHandle::delete_entry(const char *key, Transaction *transaction) {
     // 2. 在该叶子结点中删除键值对
     // 3. 如果删除成功需要调用CoalesceOrRedistribute来进行合并或重分配操作，并根据函数返回结果判断是否有结点需要删除
     // 4. 如果需要并发，并且需要删除叶子结点，则需要在事务的delete_page_set中添加删除结点的对应页面；记得处理并发的上锁
-#ifdef TEST_INDEX_DELETE
-    std::cout << "Delete entry " << key << '\n';
-#endif
+
+    std::unique_lock<std::mutex> lock(root_latch_);
+
     auto find_leaf = find_leaf_page(key, Operation::DELETE, transaction);
     auto leaf_node = find_leaf.first;
 
@@ -862,7 +864,9 @@ Rid IxIndexHandle::get_rid(const Iid &iid) const {
  * 可用*(int *)key转换回去
  */
 Iid IxIndexHandle::lower_bound(const char *key) {
-    Iid iid;
+    std::unique_lock<std::mutex> lock(root_latch_);
+
+    Iid iid{};
     auto find_leaf = find_leaf_page(key, Operation::FIND, nullptr);
     auto leaf_node = find_leaf.first;
 
@@ -888,7 +892,9 @@ Iid IxIndexHandle::lower_bound(const char *key) {
 
 
 Iid IxIndexHandle::lower_bound(const std::vector<Value> &key) {
-    Iid iid;
+    std::unique_lock<std::mutex> lock(root_latch_);
+
+    Iid iid{};
     auto root_node = fetch_node(file_hdr_->root_page_);
 
     while (!root_node->is_leaf_page()) {
@@ -924,7 +930,9 @@ Iid IxIndexHandle::lower_bound(const std::vector<Value> &key) {
  * @return Iid
  */
 Iid IxIndexHandle::upper_bound(const char *key) {
-    Iid iid;
+    std::unique_lock<std::mutex> lock(root_latch_);
+
+    Iid iid{};
     auto find_leaf = find_leaf_page(key, Operation::FIND, nullptr);
     auto leaf_node = find_leaf.first;
 
@@ -950,7 +958,9 @@ Iid IxIndexHandle::upper_bound(const char *key) {
 }
 
 Iid IxIndexHandle::upper_bound(const std::vector<Value> &key) {
-    Iid iid;
+    std::unique_lock<std::mutex> lock(root_latch_);
+
+    Iid iid{};
     auto root_node = fetch_node(file_hdr_->root_page_);
 
     while (!root_node->is_leaf_page()) {
@@ -997,6 +1007,26 @@ void IxIndexHandle::get_key(Iid iid, char *key) {
     }
     buffer_pool_manager_->unpin_page(node->get_page_id(), false);  // unpin it!
 }
+
+bool IxIndexHandle::minus_one(Iid& iid) {
+    if (iid == leaf_begin()) {
+        return false;
+    }
+
+    if (iid.slot_no == 0) {
+        IxNodeHandle *node = fetch_node(iid.page_no);
+        iid.page_no = node->page_hdr->prev_leaf;
+        buffer_pool_manager_->unpin_page({fd_, iid.page_no}, false);
+        node = fetch_node(iid.page_no);
+        iid.slot_no = node->get_size() - 1;
+        buffer_pool_manager_->unpin_page({fd_, iid.page_no}, false);
+    } else {
+        iid.slot_no--;
+    }
+
+    return true;
+}
+
 
 /**
  * @brief 指向最后一个叶子的最后一个结点的后一个

@@ -88,22 +88,30 @@ extern int yydebug;
     JOIN = 289,                    /* JOIN  */
     EXIT = 290,                    /* EXIT  */
     HELP = 291,                    /* HELP  */
-    TXN_BEGIN = 292,               /* TXN_BEGIN  */
-    TXN_COMMIT = 293,              /* TXN_COMMIT  */
-    TXN_ABORT = 294,               /* TXN_ABORT  */
-    TXN_ROLLBACK = 295,            /* TXN_ROLLBACK  */
-    ORDER_BY = 296,                /* ORDER_BY  */
-    ENABLE_NESTLOOP = 297,         /* ENABLE_NESTLOOP  */
-    ENABLE_SORTMERGE = 298,        /* ENABLE_SORTMERGE  */
-    LEQ = 299,                     /* LEQ  */
-    NEQ = 300,                     /* NEQ  */
-    GEQ = 301,                     /* GEQ  */
-    T_EOF = 302,                   /* T_EOF  */
-    IDENTIFIER = 303,              /* IDENTIFIER  */
-    VALUE_STRING = 304,            /* VALUE_STRING  */
-    VALUE_INT = 305,               /* VALUE_INT  */
-    VALUE_FLOAT = 306,             /* VALUE_FLOAT  */
-    VALUE_BOOL = 307               /* VALUE_BOOL  */
+    STATIC = 292,                  /* STATIC  */
+    CHECKPOINT = 293,              /* CHECKPOINT  */
+    LOAD = 294,                    /* LOAD  */
+    OFF = 295,                     /* OFF  */
+    OUTPUT_FILE = 296,             /* OUTPUT_FILE  */
+    DATETIME = 297,                /* DATETIME  */
+    TXN_BEGIN = 298,               /* TXN_BEGIN  */
+    TXN_COMMIT = 299,              /* TXN_COMMIT  */
+    TXN_ABORT = 300,               /* TXN_ABORT  */
+    TXN_ROLLBACK = 301,            /* TXN_ROLLBACK  */
+    ORDER_BY = 302,                /* ORDER_BY  */
+    ENABLE_NESTLOOP = 303,         /* ENABLE_NESTLOOP  */
+    ENABLE_SORTMERGE = 304,        /* ENABLE_SORTMERGE  */
+    LEQ = 305,                     /* LEQ  */
+    NEQ = 306,                     /* NEQ  */
+    GEQ = 307,                     /* GEQ  */
+    T_EOF = 308,                   /* T_EOF  */
+    IDENTIFIER = 309,              /* IDENTIFIER  */
+    VALUE_STRING = 310,            /* VALUE_STRING  */
+    PATH = 311,                    /* PATH  */
+    VALUE_INT = 312,               /* VALUE_INT  */
+    VALUE_FLOAT = 313,             /* VALUE_FLOAT  */
+    VALUE_BOOL = 314,              /* VALUE_BOOL  */
+    VALUE_DATETIME = 315           /* VALUE_DATETIME  */
   };
   typedef enum yytokentype yytoken_kind_t;
 #endif

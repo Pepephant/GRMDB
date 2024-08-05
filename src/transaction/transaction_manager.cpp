@@ -10,7 +10,7 @@ See the Mulan PSL v2 for more details. */
 
 #include "transaction_manager.h"
 #include "record/rm_file_handle.h"
-#include "system/sm_manager.h"
+// #include "system/sm_manager.h"
 
 std::unordered_map<txn_id_t, Transaction *> TransactionManager::txn_map = {};
 
@@ -28,28 +28,35 @@ Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manage
     // 4. 返回当前事务指针
     // std::unique_lock<std::mutex> lock(latch_);
     txn_id_t txn_id;
-    timestamp_t start_ts;
+//    timestamp_t start_ts;
+//    if (txn == nullptr) {
+//        txn_id = next_txn_id_++;
+//        start_ts = next_timestamp_++;
+//        txn = new Transaction(txn_id);
+//        txn->set_start_ts(start_ts);
+//    } else {
+//        txn_id = txn->get_transaction_id();
+//    }
+//    txn->set_state(TransactionState::GROWING);
 
+    std::unique_lock<std::mutex> lock(latch_);
     if (txn == nullptr) {
         txn_id = next_txn_id_++;
-        start_ts = next_timestamp_++;
-        txn = new Transaction(txn_id);
-        txn->set_start_ts(start_ts);
-        // txn->set_state(TransactionState::GROWING);
+        log_manager->flush_log_to_disk();
+        txn_map[txn_id] = new Transaction(txn_id);
+        txn = txn_map[txn_id];
+        txn->set_start_ts(next_timestamp_++);
     } else {
         txn_id = txn->get_transaction_id();
+        txn_map[txn_id] = txn;
     }
     txn->set_state(TransactionState::GROWING);
-    std::unique_lock<std::mutex> lock(latch_);
-    txn_map[txn_id] = txn;
     lock.unlock();
 
-    if (log_manager != nullptr) {
-        auto record = BeginLogRecord(txn->get_transaction_id());
-        record.prev_lsn_ = txn->get_prev_lsn();
-        auto lsn = log_manager->add_log_to_buffer(&record);
-        txn->set_prev_lsn(lsn);
-    }
+    auto record = BeginLogRecord(txn->get_transaction_id());
+    record.prev_lsn_ = txn->get_prev_lsn();
+    auto lsn = log_manager->add_log_to_buffer(&record);
+    txn->set_prev_lsn(lsn);
 
     return txn;
 }
@@ -129,7 +136,7 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
  * @param {Transaction *} txn 需要回滚的事务
  * @param {LogManager} *log_manager 日志管理器指针
  */
-void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
+void TransactionManager::abort(Transaction * txn, LogManager *log_manager, SmManager* sm_manager) {
     // Todo:
     // 1. 回滚所有写操作
     // 2. 释放所有锁
@@ -152,46 +159,70 @@ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
                     // 删除插入的元组
                     file_handle->delete_record(record.GetRid(), nullptr);
                     // 删除索引
-                    for (auto &index: indexes) {
-                        auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
-                        char *key = new char[index.col_tot_len];
-                        for (size_t i = 0; i < index.col_num; ++i) {
-                            auto offset = tab_.get_col(index.cols[i].name)->offset;
-                            memcpy(key + index.cols[i].offset, record.GetRecord().data + offset, index.cols[i].len);
+                    if(!indexes.empty()) {
+                        // is_abort_index = true;
+                        for (auto &index: indexes) {
+                            auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
+                            char *key = new char[index.col_tot_len];
+                            for (size_t i = 0; i < index.col_num; ++i) {
+                                auto offset = tab_.get_col(index.cols[i].name)->offset;
+                                memcpy(key + index.cols[i].offset, record.GetRecord().data + offset, index.cols[i].len);
+                            }
+                            ih->delete_entry(key, txn);
+                            ih->index_aborted_ = true;
                         }
-                        ih->delete_entry(key, txn);
+                        for (const auto& lock_data_id : *txn->get_lock_set()) {
+                            lock_manager_->calculate_gaps_on_table(lock_data_id);
+                        }
                     }
+
                     break;
                 case WType::DELETE_TUPLE:
                     // 恢复删除的元组
                     file_handle->insert_record(record.GetRid(), record.GetRecord().data);
                     // 插入索引
-                    for (auto &index: indexes) {
-                        auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
-                        char *key = new char[index.col_tot_len];
-                        for (size_t i = 0; i < index.col_num; ++i) {
-                            auto offset = tab_.get_col(index.cols[i].name)->offset;
-                            memcpy(key + index.cols[i].offset, record.GetRecord().data + offset, index.cols[i].len);
+                    if(!indexes.empty()) {
+                        // is_abort_index = true;
+                        for (auto &index: indexes) {
+                            auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
+                            char *key = new char[index.col_tot_len];
+                            for (size_t i = 0; i < index.col_num; ++i) {
+                                auto offset = tab_.get_col(index.cols[i].name)->offset;
+                                memcpy(key + index.cols[i].offset, record.GetRecord().data + offset, index.cols[i].len);
+                            }
+                            try {
+                                ih->insert_entry(key, record.GetRid(), txn);
+                            }catch (IndexEntryExistsError error) {}
+                            ih->index_aborted_ = true;
                         }
-                        ih->insert_entry(key, record.GetRid(), txn);
+                        for (const auto& lock_data_id : *txn->get_lock_set()) {
+                            lock_manager_->calculate_gaps_on_table(lock_data_id);
+                        }
                     }
                     break;
                 case WType::UPDATE_TUPLE:
                     // 操作索引
-                    for(auto& index: indexes) {
-                        auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
-                        char* old_key = new char[index.col_tot_len];
-                        char* new_key = new char[index.col_tot_len];
-                        for(size_t i = 0; i < index.col_num; ++i) {
-                            auto offset = tab_.get_col(index.cols[i].name)->offset;
-                            memcpy(old_key + index.cols[i].offset, record.GetOldRecord().data + offset, index.cols[i].len);
+                    if(!indexes.empty()) {
+                        // is_abort_index = true;
+                        for(auto& index: indexes) {
+                            auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
+                            char* old_key = new char[index.col_tot_len];
+                            char* new_key = new char[index.col_tot_len];
+                            for(size_t i = 0; i < index.col_num; ++i) {
+                                auto offset = tab_.get_col(index.cols[i].name)->offset;
+                                memcpy(old_key + index.cols[i].offset, record.GetOldRecord().data + offset, index.cols[i].len);
+                            }
+                            for(size_t i = 0; i < index.col_num; ++i) {
+                                auto offset = tab_.get_col(index.cols[i].name)->offset;
+                                memcpy(new_key + index.cols[i].offset, record.GetRecord().data + offset, index.cols[i].len);
+                            }
+                            ih->delete_entry(new_key, txn);
+                            ih->insert_entry(old_key, record.GetRid(), txn);
+                            ih->index_aborted_ = true;
                         }
-                        for(size_t i = 0; i < index.col_num; ++i) {
-                            auto offset = tab_.get_col(index.cols[i].name)->offset;
-                            memcpy(new_key + index.cols[i].offset, record.GetRecord().data + offset, index.cols[i].len);
+                        for (const auto& lock_data_id : *txn->get_lock_set()) {
+                            lock_manager_->calculate_gaps_on_table(lock_data_id);
                         }
-                        ih->delete_entry(new_key, txn);
-                        ih->insert_entry(old_key, record.GetRid(), txn);
                     }
                     // 回滚更新元组
                     if(record.GetOldRecord().allocated_) {

@@ -24,12 +24,18 @@ class NestedLoopJoinExecutor : public AbstractExecutor {
 
     std::vector<Condition> fed_conds_;          // join条件
     bool isend;
+    bool left_end_;
+    bool right_end_;
+    bool is_last_tuple_;
 
     /*My fields*/
     std::unique_ptr<RmRecord> record_;
     std::vector<ColMeta> left_cols_;
     std::vector<ColMeta> right_cols_;
     std::vector<ColMeta> all_cols_;
+
+    std::unique_ptr<RmRecord> left_tuple_;
+    std::unique_ptr<RmRecord> right_tuple_;
    public:
     NestedLoopJoinExecutor(std::unique_ptr<AbstractExecutor> left, std::unique_ptr<AbstractExecutor> right, 
                             std::vector<Condition> conds) {
@@ -44,6 +50,9 @@ class NestedLoopJoinExecutor : public AbstractExecutor {
         }
 
         cols_.insert(cols_.end(), right_cols.begin(), right_cols.end());
+        is_last_tuple_ = false;
+        left_end_ = false;
+        right_end_ = false;
         isend = false;
         fed_conds_ = std::move(conds);
 
@@ -57,52 +66,81 @@ class NestedLoopJoinExecutor : public AbstractExecutor {
         left_->beginTuple();
         right_->beginTuple();
 
-        while (!left_->is_end()) {
-            auto left_tuple = left_->Next();
-
-            if (right_->is_end()) {
-                left_->nextTuple();
-                right_->beginTuple();
-                continue;
-            }
-
-            while (!right_->is_end()) {
-                auto right_tuple = right_->Next();
-                right_->nextTuple();
-                auto tuple = make_record(left_tuple.get(), right_tuple.get());
-                if (evaluate_join(tuple.get())) {
-                    record_ = std::move(tuple);
-                    return ;
-                }
-            }
+        left_end_ = left_->is_end();
+        right_end_ = right_->is_end();
+        if (left_end_ || right_end_) {
+            is_last_tuple_ = true;
+            isend = true;
+            return;
         }
 
-        isend = true;
+        while (!is_last_tuple_) {
+            left_tuple_ = left_->Next();
+            right_tuple_ = right_->Next();
+            auto tuple = make_record(left_tuple_.get(), right_tuple_.get());
+
+            // std::cout << "Now at: " << left_->rid().toString() << ", " << right_->rid().toString() << "\n";
+
+            left_end_ = left_->is_end();
+            right_end_ = right_->is_end();
+
+            right_->nextTuple();
+            right_end_ = right_->is_end();
+            if (right_end_) {
+                left_->nextTuple();
+                right_->beginTuple();
+                left_end_ = left_->is_end();
+                if (left_end_) {
+                    isend = true;
+                    is_last_tuple_ = true;
+                }
+            }
+
+            if (evaluate_join(tuple.get())) {
+                record_ = std::move(tuple);
+                if (is_last_tuple_) {
+                    isend = false;
+                }
+                break;
+            }
+        }
     }
 
     void nextTuple() override {
-
-        while (!left_->is_end()) {
-            auto left_tuple = left_->Next();
-
-            if (right_->is_end()) {
-                left_->nextTuple();
-                right_->beginTuple();
-                continue;
-            }
-
-            while (!right_->is_end()) {
-                auto right_tuple = right_->Next();
-                right_->nextTuple();
-                auto tuple = make_record(left_tuple.get(), right_tuple.get());
-                if (evaluate_join(tuple.get())) {
-                    record_ = std::move(tuple);
-                    return ;
-                }
-            }
+        if (is_last_tuple_ && !isend) {
+            isend = true;
         }
 
-        isend = true;
+        while (!is_last_tuple_) {
+            left_tuple_ = left_->Next();
+            right_tuple_ = right_->Next();
+            auto tuple = make_record(left_tuple_.get(), right_tuple_.get());
+
+            // std::cout << "Now at: " << left_->rid().toString() << ", " << right_->rid().toString() << "\n";
+
+            left_end_ = left_->is_end();
+            right_end_ = right_->is_end();
+
+            right_->nextTuple();
+            right_end_ = right_->is_end();
+            if (right_end_) {
+                left_->nextTuple();
+                right_->beginTuple();
+                left_end_ = left_->is_end();
+                if (left_end_) {
+                    isend = true;
+                    is_last_tuple_ = true;
+                }
+            }
+
+            if (evaluate_join(tuple.get())) {
+                record_ = std::move(tuple);
+                if (is_last_tuple_) {
+                    isend = false;
+                }
+                break;
+            }
+        }
     }
 
     std::unique_ptr<RmRecord> Next() override {

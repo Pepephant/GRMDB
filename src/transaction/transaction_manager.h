@@ -36,7 +36,7 @@ public:
 
     void commit(Transaction* txn, LogManager* log_manager);
 
-    void abort(Transaction* txn, LogManager* log_manager);
+    void abort(Transaction* txn, LogManager* log_manager, SmManager* sm_manager);
 
     ConcurrencyMode get_concurrency_mode() { return concurrency_mode_; }
 
@@ -61,6 +61,7 @@ public:
 
         return res;
     }
+    // bool is_abort_index{false};
 
     static std::unordered_map<txn_id_t, Transaction *> txn_map;     // 全局事务表，存放事务ID与事务对象的映射关系
 

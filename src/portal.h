@@ -26,6 +26,7 @@ See the Mulan PSL v2 for more details. */
 #include "execution/executor_aggregation.h"
 #include "execution/execution_subquery.h"
 #include "execution/execution_sort_merge.h"
+#include "execution/executor_load.h"
 #include "common/common.h"
 #include "execution/execution_values.h"
 
@@ -65,10 +66,17 @@ class Portal
         // 这里可以将select进行拆分，例如：一个select，带有return的select等
         if (auto x = std::dynamic_pointer_cast<OtherPlan>(plan)) {
             return std::make_shared<PortalStmt>(PORTAL_CMD_UTILITY, std::vector<TabCol>(), std::unique_ptr<AbstractExecutor>(),plan);
-        } else if(auto x = std::dynamic_pointer_cast<SetKnobPlan>(plan)) {
+        } else if (auto x = std::dynamic_pointer_cast<SetKnobPlan>(plan)) {
             return std::make_shared<PortalStmt>(PORTAL_CMD_UTILITY, std::vector<TabCol>(), std::unique_ptr<AbstractExecutor>(), plan); 
+        } else if (auto x = std::dynamic_pointer_cast<SetOutputOffPlan>(plan)) {
+            return std::make_shared<PortalStmt>(PORTAL_CMD_UTILITY, std::vector<TabCol>(), std::unique_ptr<AbstractExecutor>(), plan);
         } else if (auto x = std::dynamic_pointer_cast<DDLPlan>(plan)) {
             return std::make_shared<PortalStmt>(PORTAL_MULTI_QUERY, std::vector<TabCol>(), std::unique_ptr<AbstractExecutor>(),plan);
+        } else if (auto x = std::dynamic_pointer_cast<CkpPlan>(plan)) {
+            return std::make_shared<PortalStmt>(PORTAL_CMD_UTILITY, std::vector<TabCol>(), std::unique_ptr<AbstractExecutor>(), plan);
+        } else if (auto x = std::dynamic_pointer_cast<LoadPlan>(plan)) {
+            std::unique_ptr<AbstractExecutor> root = convert_plan_executor(plan, context);
+            return std::make_shared<PortalStmt>(PORTAL_DML_WITHOUT_SELECT, std::vector<TabCol>(), std::move(root), plan);
         } else if (auto x = std::dynamic_pointer_cast<DMLPlan>(plan)) {
             switch(x->tag) {
                     
@@ -192,6 +200,8 @@ class Portal
                                             x->aggregates_, x->group_bys_, x->havings_, context);
         } else if (auto x = std::dynamic_pointer_cast<ValuesPlan>(plan)) {
             return std::make_unique<ValuesExecutor>(x->values_, x->col_, context);
+        } else if (auto x = std::dynamic_pointer_cast<LoadPlan>(plan)) {
+            return std::make_unique<LoadExecutor>(sm_manager_, x->path_, x->tab_name_, context);
         }
         return nullptr;
     }

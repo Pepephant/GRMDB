@@ -224,7 +224,9 @@ void SmManager::create_table(const std::string& tab_name, const std::vector<ColD
     db_.tabs_[tab_name] = tab;
     // fhs_[tab_name] = rm_manager_->open_file(tab_name);
     auto fh = rm_manager_->open_file(tab_name);
-    context->lock_mgr_->lock_exclusive_on_table(context->txn_,fh->GetFd());
+    if(context != nullptr) {
+        context->lock_mgr_->lock_exclusive_on_table(context->txn_,fh->GetFd());
+    }
     fhs_.emplace(tab_name, std::move(fh));
     flush_meta();
 }
@@ -239,6 +241,10 @@ void SmManager::drop_table(const std::string& tab_name, Context* context) {
         throw TableNotFoundError(tab_name);
     }
 
+    if(context != nullptr) {
+        context->lock_mgr_->lock_exclusive_on_table(context->txn_,fhs_[tab_name]->GetFd());
+    }
+
     // 删除表中的索引
     TabMeta& tab_meta = db_.tabs_[tab_name];
     for (auto& index: tab_meta.indexes) {
@@ -246,12 +252,10 @@ void SmManager::drop_table(const std::string& tab_name, Context* context) {
     }
 
     // 删除表中的文件和记录
-    context->lock_mgr_->lock_exclusive_on_table(context->txn_,fhs_[tab_name]->GetFd());
-
-    rm_manager_->close_file(fhs_[tab_name].get());
-    rm_manager_->destroy_file(tab_name);
     db_.tabs_.erase(tab_name);
     fhs_.erase(tab_name);
+    rm_manager_->close_file(fhs_[tab_name].get());
+    rm_manager_->destroy_file(tab_name);
 
     flush_meta();
 }
@@ -267,6 +271,9 @@ void SmManager::create_index(const std::string& tab_name, const std::vector<std:
 
     if (tab_meta.is_index(col_names)) {
         throw IndexExistsError(tab_name, col_names);
+    }
+    if(context != nullptr) {
+        context->lock_mgr_->lock_exclusive_on_table(context->txn_,fhs_[tab_name]->GetFd());
     }
 
     std::vector<ColMeta> idx_cols;
@@ -309,7 +316,11 @@ void SmManager::create_index(const std::string& tab_name, const std::vector<std:
             auto offset = tab_meta.get_col(new_meta.cols[i].name)->offset;
             memcpy(key + new_meta.cols[i].offset, rec->data + offset, new_meta.cols[i].len);
         }
-        ih->insert_entry(key, rid, context->txn_);
+        if (context == nullptr) {
+            ih->insert_entry(key, rid, nullptr);
+        } else {
+            ih->insert_entry(key, rid, context->txn_);
+        }
     }
 
     // ix_manager_->close_index(ihs_.find(ix_name)->second.get());
@@ -328,6 +339,9 @@ void SmManager::drop_index(const std::string& tab_name, const std::vector<std::s
         throw IndexNotFoundError(tab_name, col_names);
     }
 
+    if(context != nullptr) {
+        context->lock_mgr_->lock_exclusive_on_table(context->txn_,fhs_[tab_name]->GetFd());
+    }
     // 关闭并消毁索引文件
     auto ix_name = ix_manager_->get_index_name(tab_name, col_names);
     ix_manager_->close_index(ihs_[ix_name].get());
@@ -357,6 +371,9 @@ void SmManager::drop_index(const std::string& tab_name, const std::vector<ColMet
         throw IndexNotFoundError(tab_name, col_names);
     }
 
+    if(context != nullptr) {
+        context->lock_mgr_->lock_exclusive_on_table(context->txn_,fhs_[tab_name]->GetFd());
+    }
     // 关闭并消毁索引文件
     auto ix_name = ix_manager_->get_index_name(tab_name, cols);
     ix_manager_->close_index(ihs_[ix_name].get());

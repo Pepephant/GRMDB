@@ -68,6 +68,11 @@ struct Value {
         str_val = std::move(str_val_);
     }
 
+    void set_datetime(std::string val_) {
+        type = TYPE_STRING;
+        str_val = std::move(val_);
+    }
+
     void init_raw(int len) {
         assert(raw == nullptr);
         raw = std::make_shared<RmRecord>(len);

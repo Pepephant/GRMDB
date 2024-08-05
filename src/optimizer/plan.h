@@ -32,6 +32,9 @@ typedef enum PlanTag{
     T_CreateIndex,
     T_DropIndex,
     T_SetKnob,
+    T_SetOutputOff,
+    T_CheckPoint,
+    T_Load,
     T_Insert,
     T_Update,
     T_Delete,
@@ -269,6 +272,32 @@ class SetKnobPlan : public Plan
         }
     ast::SetKnobType set_knob_type_;
     bool bool_value_;
+};
+
+class SetOutputOffPlan : public Plan
+{
+    public:
+        SetOutputOffPlan() {
+            Plan::tag = T_SetOutputOff;
+        }
+};
+
+class CkpPlan : public Plan {
+public:
+    CkpPlan() {
+        Plan::tag = T_CheckPoint;
+    }
+};
+
+class LoadPlan : public Plan {
+public:
+    LoadPlan(std::string path, std::string tab_name) {
+        Plan::tag = T_Load;
+        path_ = std::move(path);
+        tab_name_ = std::move(tab_name);
+    }
+    std::string path_;
+    std::string tab_name_;
 };
 
 class plannerInfo{

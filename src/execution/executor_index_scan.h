@@ -82,26 +82,35 @@ public:
             }
         }
 
+        context_->lock_mgr_->lock_IS_on_table(context_->txn_,fh_->GetFd());
+
         fed_conds_ = conds_;
         is_end_ = false;
     }
 
     void beginTuple() override {
-        context_->lock_mgr_->lock_IS_on_table(context_->txn_,fh_->GetFd());
         auto ix_name = sm_manager_->get_ix_manager()->get_index_name(tab_name_, index_col_names_);
         ih_ = sm_manager_->ihs_.at(ix_name).get();
         auto bpm = sm_manager_->get_bpm();
+        Iid lower;
+        Iid upper;
 
-        auto lower_bound = new char[index_meta_.col_tot_len];
-        auto upper_bound = new char[index_meta_.col_tot_len];
-        auto bound = get_bound();
-        Iid lower = bound.first;
-        Iid upper = bound.second;
-        ih_->get_key(lower, lower_bound);
-        ih_->get_key(upper, upper_bound);
-        is_end_ = (check_valid(lower_bound, upper_bound) || lower == upper);
-        print_key(lower_bound, "lower_bound");
-        print_key(upper_bound, "upper_bound");
+        do {
+            ih_->index_aborted_ = false;
+
+            auto lower_key = new char[index_meta_.col_tot_len];
+            auto upper_key = new char[index_meta_.col_tot_len];
+            auto bound = get_bound(lower_key, upper_key);
+            lower = bound.first;
+            upper = bound.second;
+            get_gap_lock_key(lower_key, upper_key, bound);
+
+            is_end_ = ix_compare(lower_key, upper_key, index_meta_.cols) > 0;
+            if (is_end_) { break; }
+
+            context_->lock_mgr_->lock_GAP_on_table(context_->txn_,fh_->GetFd(),lower_key,upper_key,index_meta_,conds_,ih_);
+        } while (ih_->index_aborted_);
+
         ix_scan_ = std::make_unique<IxScan>(ih_, lower, upper, bpm);
         if (!ix_scan_->is_end() && !is_end_) {
             rid_ = ix_scan_->rid();
@@ -135,16 +144,22 @@ private:
         return ix_compare(lower, upper, index_meta_.cols) > 0;
     }
 
-    inline std::pair<Iid, Iid> get_bound() {
+    inline std::pair<Iid, Iid> get_bound(char* lower_key, char* upper_key) {
         if (conds_.empty()) {
+            int offset = 0;
             for (auto& col: index_meta_.cols) {
                 Value value;
                 value.generate_max(col.type, col.len);
+                memcpy(upper_key + offset, value.raw->data, col.len);
+                offset += col.len;
             }
 
+            offset = 0;
             for (auto& col: index_meta_.cols) {
                 Value value;
                 value.generate_min(col.type, col.len);
+                memcpy(lower_key + offset, value.raw->data, col.len);
+                offset += col.len;
             }
 
             return std::make_pair(ih_->leaf_begin(), ih_->leaf_end());
@@ -203,6 +218,18 @@ private:
             upper_values.push_back(value);
         }
 
+        int offset = 0;
+        for (int i = 0; i < index_meta_.col_num; i++) {
+            memcpy(lower_key + offset, lower_values[i].raw->data, index_meta_.cols[i].len);
+            offset += index_meta_.cols[i].len;
+        }
+
+        offset = 0;
+        for (int i = 0; i < index_meta_.col_num; i++) {
+            memcpy(upper_key + offset, upper_values[i].raw->data, index_meta_.cols[i].len);
+            offset += index_meta_.cols[i].len;
+        }
+
         if (upper_comp == OP_LT) {
             upper_bound = ih_->lower_bound(upper_values);
         } else {
@@ -218,6 +245,31 @@ private:
         return std::make_pair(lower_bound, upper_bound);
     }
 
+    void inline get_gap_lock_key(char* lower_key, char* upper_key, std::pair<Iid, Iid> bound) {
+        char* lower_bound = new char [index_meta_.col_tot_len];
+        char* upper_bound = new char [index_meta_.col_tot_len];
+
+        Iid lower_iid = bound.first;
+        Iid upper_iid = bound.second;
+        ih_->get_key(lower_iid, lower_bound);
+        ih_->get_key(upper_iid, upper_bound);
+
+        int lower_comp = ix_compare(lower_key, lower_bound, index_meta_.cols);
+
+        if (lower_comp < 0) {
+            if (ih_->minus_one(lower_iid)) {
+                ih_->get_key(lower_iid, lower_bound);
+                memcpy(lower_key, lower_bound, index_meta_.col_tot_len);
+            }
+        } else {
+            print_key(lower_key, "lower_key");
+            print_key(lower_bound, "lower_bound");
+            assert(lower_comp == 0);
+            memcpy(lower_key, lower_bound, index_meta_.col_tot_len);
+        }
+
+        memcpy(upper_key, upper_bound, index_meta_.col_tot_len);
+    }
 
     void print_key(const char* key, std::string description) {
         std::cout << description << ": ";
