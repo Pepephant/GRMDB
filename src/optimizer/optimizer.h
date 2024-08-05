@@ -59,6 +59,15 @@ class Optimizer {
         } else if (auto x = std::dynamic_pointer_cast<ast::SetStmt>(query->parse)) {
             // Set Knob Plan
             return std::make_shared<SetKnobPlan>(x->set_knob_type_, x->bool_val_);
+        } else if (auto x = std::dynamic_pointer_cast<ast::CkpStmt>(query->parse)) {
+            // Create static checkpoint;
+            return std::make_shared<OtherPlan>(T_CheckPoint, std::string());
+        } else if (auto x = std::dynamic_pointer_cast<ast::OffStmt>(query->parse)) {
+            // Set Output_file off
+            return std::make_shared<SetOutputOffPlan>();
+        } else if (auto x = std::dynamic_pointer_cast<ast::LoadStmt>(query->parse)) {
+            // load into
+            return std::make_shared<LoadPlan>(x->filename_, x->tab_name_);
         } else {
             return planner_->do_planner(query, context);
         }

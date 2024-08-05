@@ -33,6 +33,7 @@ class QlManager {
     SmManager *sm_manager_;
     TransactionManager *txn_mgr_;
     Planner *planner_;
+    bool output_off_{false};
 
    public:
     QlManager(SmManager *sm_manager, TransactionManager *txn_mgr, Planner *planner) 

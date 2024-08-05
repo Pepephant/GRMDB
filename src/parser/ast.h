@@ -23,7 +23,7 @@ enum JoinType {
 namespace ast {
 
 enum SvType {
-    SV_TYPE_INT, SV_TYPE_FLOAT, SV_TYPE_STRING, SV_TYPE_BOOL
+    SV_TYPE_INT, SV_TYPE_FLOAT, SV_TYPE_STRING, SV_TYPE_BOOL, SV_TYPE_DATETIME
 };
 
 enum SvCompOp {
@@ -72,6 +72,20 @@ struct TxnAbort : public TreeNode {
 };
 
 struct TxnRollback : public TreeNode {
+};
+
+struct CkpStmt : public TreeNode {
+};
+
+struct OffStmt : public TreeNode {
+};
+
+struct LoadStmt : public TreeNode {
+    std::string filename_;
+    std::string tab_name_;
+
+    LoadStmt(std::string filename, std::string tab_name) :
+        filename_(std::move(filename)), tab_name_(std::move(tab_name)) {}
 };
 
 struct TypeLen : public TreeNode {
@@ -156,6 +170,12 @@ struct BoolLit : public Value {
     bool val;
 
     BoolLit(bool val_) : val(val_) {}
+};
+
+struct DateTimeLit : public Value {
+    std::string val;
+
+    DateTimeLit(std::string val_) : val(val_) {}
 };
 
 struct Col : public Expr {

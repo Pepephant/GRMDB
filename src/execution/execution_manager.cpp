@@ -21,6 +21,7 @@ See the Mulan PSL v2 for more details. */
 #include "execution_subquery.h"
 #include "execution_sort.h"
 #include "execution_sort_merge.h"
+#include "executor_load.h"
 #include "execution_values.h"
 #include "index/ix.h"
 #include "record_printer.h"
@@ -120,36 +121,48 @@ void QlManager::run_cmd_utility(std::shared_ptr<Plan> plan, txn_id_t *txn_id, Co
             case T_Transaction_rollback:
             {
                 context->txn_ = txn_mgr_->get_transaction(*txn_id);
-                txn_mgr_->abort(context->txn_, context->log_mgr_);
+                txn_mgr_->abort(context->txn_, context->log_mgr_, sm_manager_);
                 break;
             }    
             case T_Transaction_abort:
             {
                 context->txn_ = txn_mgr_->get_transaction(*txn_id);
-                txn_mgr_->abort(context->txn_, context->log_mgr_);
+                txn_mgr_->abort(context->txn_, context->log_mgr_, sm_manager_);
                 break;
-            }     
+            }
+            case T_CheckPoint:
+            {
+                CkpLogRecord log{};
+                context->log_mgr_->add_log_to_buffer(&log);
+                context->log_mgr_->flush_log_to_disk();
+                for (auto& fh_iter: sm_manager_->fhs_) {
+                    auto fh = fh_iter.second.get();
+                    auto bpm = sm_manager_->get_bpm();
+                    bpm->flush_all_pages(fh->GetFd());
+                }
+                break;
+            }
             default:
                 throw InternalError("Unexpected field type");
-                break;                        
         }
 
     } else if(auto x = std::dynamic_pointer_cast<SetKnobPlan>(plan)) {
         switch (x->set_knob_type_)
         {
-        case ast::SetKnobType::EnableNestLoop: {
-            planner_->set_enable_nestedloop_join(x->bool_value_);
-            break;
+            case ast::SetKnobType::EnableNestLoop: {
+                planner_->set_enable_nestedloop_join(x->bool_value_);
+                break;
+            }
+            case ast::SetKnobType::EnableSortMerge: {
+                planner_->set_enable_sortmerge_join(x->bool_value_);
+                break;
+            }
+            default: {
+                throw RMDBError("Not implemented!\n");
+            }
         }
-        case ast::SetKnobType::EnableSortMerge: {
-            planner_->set_enable_sortmerge_join(x->bool_value_);
-            break;
-        }
-        default: {
-            throw RMDBError("Not implemented!\n");
-            break;
-        }
-        }
+    } else if (auto x = std::dynamic_pointer_cast<SetOutputOffPlan>(plan)) {
+        output_off_ = true;
     }
 }
 
@@ -194,6 +207,10 @@ void QlManager::select_from(std::unique_ptr<AbstractExecutor> executorTreeRoot, 
                 col_str.resize(strlen(col_str.c_str()));
             }
             columns.push_back(col_str);
+        }
+        if (output_off_) {
+            output_off_ = false;
+            break;
         }
         // print record into buffer
         rec_printer.print_record(columns, context);

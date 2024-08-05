@@ -31,7 +31,8 @@ static bool should_exit = false;
 
 // 构建全局所需的管理器对象
 auto disk_manager = std::make_unique<DiskManager>();
-auto buffer_pool_manager = std::make_unique<BufferPoolManager>(BUFFER_POOL_SIZE, disk_manager.get());
+auto log_manager = std::make_unique<LogManager>(disk_manager.get());
+auto buffer_pool_manager = std::make_unique<BufferPoolManager>(BUFFER_POOL_SIZE, disk_manager.get(), log_manager.get());
 auto rm_manager = std::make_unique<RmManager>(disk_manager.get(), buffer_pool_manager.get());
 auto ix_manager = std::make_unique<IxManager>(disk_manager.get(), buffer_pool_manager.get());
 auto sm_manager = std::make_unique<SmManager>(disk_manager.get(), buffer_pool_manager.get(), rm_manager.get(), ix_manager.get());
@@ -40,7 +41,6 @@ auto txn_manager = std::make_unique<TransactionManager>(lock_manager.get(), sm_m
 auto planner = std::make_unique<Planner>(sm_manager.get());
 auto optimizer = std::make_unique<Optimizer>(sm_manager.get(), planner.get());
 auto ql_manager = std::make_unique<QlManager>(sm_manager.get(), txn_manager.get(), planner.get());
-auto log_manager = std::make_unique<LogManager>(disk_manager.get());
 auto recovery = std::make_unique<RecoveryManager>(disk_manager.get(), buffer_pool_manager.get(), sm_manager.get());
 auto portal = std::make_unique<Portal>(sm_manager.get());
 auto analyze = std::make_unique<Analyze>(sm_manager.get());
@@ -59,8 +59,8 @@ void sigint_handler(int signo) {
 void SetTransaction(txn_id_t *txn_id, Context *context) {
     context->txn_ = txn_manager->get_transaction(*txn_id);
     if(context->txn_ == nullptr || context->txn_->get_state() == TransactionState::COMMITTED ||
-        context->txn_->get_state() == TransactionState::ABORTED) {
-        context->txn_ = txn_manager->begin(txn_manager->get_transaction(*txn_id), context->log_mgr_);
+       context->txn_->get_state() == TransactionState::ABORTED) {
+        context->txn_ = txn_manager->begin(nullptr, context->log_mgr_);
         *txn_id = context->txn_->get_transaction_id();
         context->txn_->set_txn_mode(false);
     }
@@ -97,7 +97,7 @@ void *client_handler(void *sock_fd) {
             std::cout << "Client read error!" << std::endl;
             break;
         }
-        
+
         printf("i_recvBytes: %d \n ", i_recvBytes);
 
         if (strcmp(data_recv, "exit") == 0) {
@@ -115,7 +115,7 @@ void *client_handler(void *sock_fd) {
         offset = 0;
 
         // 开启事务，初始化系统所需的上下文信息（包括事务对象指针、锁管理器指针、日志管理器指针、存放结果的buffer、记录结果长度的变量）
-        Context *context = new Context(lock_manager.get(), log_manager.get(), txn_manager->get_transaction(txn_id), data_send, &offset);
+        Context *context = new Context(lock_manager.get(), log_manager.get(), nullptr, data_send, &offset);
         context->txn_mgr_ = txn_manager.get();
 //#ifdef TRANSACTION_IMPLEMENTED
         SetTransaction(&txn_id, context);
@@ -148,13 +148,19 @@ void *client_handler(void *sock_fd) {
                         offset = str.length();
 
                         // 回滚事务
-                        txn_manager->abort(context->txn_, log_manager.get());
-                        std::cout << e.GetInfo() << std::endl;
+                        txn_manager->abort(context->txn_, log_manager.get(), sm_manager.get());
+                        std::cout << e.GetInfo() << '\n';
 
                         std::fstream outfile;
                         outfile.open("output.txt", std::ios::out | std::ios::app);
-                        outfile << str;
+
+                        if (e.GetAbortReason() == AbortReason::CONSTRAINT_VIOLATION) {
+                            outfile << "failure\n";
+                        } else {
+                            outfile << str;
+                        }
                         outfile.close();
+
                     } catch (RMDBError &e) {
                         // 遇到异常，需要打印failure到output.txt文件中，并发异常信息返回给客户端
                         std::cerr << e.what() << std::endl;
@@ -172,7 +178,7 @@ void *client_handler(void *sock_fd) {
                     }
                 }
             }
-        } catch (RMDBError &e) {
+        } catch (ParserError &e) {
             std::cerr << e.what() << std::endl;
 
             memcpy(data_send, e.what(), e.get_msg_len());
@@ -261,7 +267,7 @@ void start_server() {
             std::cout << "Accept error!" << std::endl;
             continue;  // ignore current socket ,continue while loop.
         }
-        
+
         // 和客户端建立连接，并开启一个线程负责处理客户端请求
         if (pthread_create(&thread_id, nullptr, &client_handler, (void *)(&sockfd)) != 0) {
             std::cout << "Create thread fail!" << std::endl;
@@ -288,6 +294,7 @@ int main(int argc, char **argv) {
     }
 
     signal(SIGINT, sigint_handler);
+
     try {
         std::cout << "\n"
                      "  _____  __  __ _____  ____  \n"
@@ -310,10 +317,16 @@ int main(int argc, char **argv) {
         sm_manager->open_db(db_name);
 
         // recovery database
-        recovery->analyze();
-        recovery->redo();
-        recovery->undo();
-        
+        try {
+            recovery->analyze();
+            recovery->redo();
+            recovery->undo();
+        } catch (RMDBError& error) {
+            std::cout << error.what() << "\n";
+        } catch (std::exception& error) {
+            std::cout << "Here's an Exception!";
+        }
+
         // 开启服务端，开始接受客户端连接
         start_server();
     } catch (RMDBError &e) {

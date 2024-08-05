@@ -23,18 +23,20 @@ using namespace ast;
 
 // keywords
 %token SHOW TABLES CREATE TABLE DROP DESC INSERT INTO VALUES DELETE FROM ASC ORDER BY GROUP HAVING MAX MIN SUM COUNT AS IN
-WHERE UPDATE SET SELECT INT CHAR FLOAT INDEX AND JOIN EXIT HELP TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE
+WHERE UPDATE SET SELECT INT CHAR FLOAT INDEX AND JOIN EXIT HELP STATIC CHECKPOINT LOAD OFF OUTPUT_FILE DATETIME
+TXN_BEGIN TXN_COMMIT TXN_ABORT TXN_ROLLBACK ORDER_BY ENABLE_NESTLOOP ENABLE_SORTMERGE
 // non-keywords
 %token LEQ NEQ GEQ T_EOF
 
 // type-specific tokens
-%token <sv_str> IDENTIFIER VALUE_STRING
+%token <sv_str> IDENTIFIER VALUE_STRING PATH
 %token <sv_int> VALUE_INT
 %token <sv_float> VALUE_FLOAT
 %token <sv_bool> VALUE_BOOL
+%token <sv_str> VALUE_DATETIME
 
 // specify types for non-terminal symbol
-%type <sv_node> stmt dbStmt ddl dml txnStmt setStmt dql
+%type <sv_node> stmt dbStmt ddl dml txnStmt setStmt dql ckpStmt loadStmt offStmt
 %type <sv_field> field
 %type <sv_fields> fieldList
 %type <sv_type_len> type
@@ -42,7 +44,7 @@ WHERE UPDATE SET SELECT INT CHAR FLOAT INDEX AND JOIN EXIT HELP TXN_BEGIN TXN_CO
 %type <sv_expr> expr
 %type <sv_val> value
 %type <sv_vals> valueList
-%type <sv_str> tbName colName alias
+%type <sv_str> tbName colName alias fileName
 %type <sv_strs> tableList colNameList
 %type <sv_col> col
 %type <sv_cols> colList
@@ -83,6 +85,11 @@ start:
         parse_tree = nullptr;
         YYACCEPT;
     }
+    |   offStmt
+    {
+        parse_tree = $1;
+        YYACCEPT;
+    }
     ;
 
 stmt:
@@ -92,7 +99,30 @@ stmt:
     |   txnStmt
     |   setStmt
     |   dql
+    |   loadStmt
+    |   ckpStmt
     ;
+
+ckpStmt:
+        CREATE STATIC CHECKPOINT
+     {
+        $$ = std::make_shared<CkpStmt>();
+     }
+     ;
+
+loadStmt:
+        LOAD fileName INTO tbName
+     {
+        $$ = std::make_shared<LoadStmt>($2, $4);
+     }
+     ;
+
+offStmt:
+        SET OUTPUT_FILE OFF
+     {
+        $$ = std::make_shared<OffStmt>();
+     }
+     ;
 
 txnStmt:
         TXN_BEGIN
@@ -306,6 +336,10 @@ type:
     {
         $$ = std::make_shared<TypeLen>(SV_TYPE_FLOAT, sizeof(float));
     }
+    |   DATETIME
+    {
+        $$ = std::make_shared<TypeLen>(SV_TYPE_STRING, 20);
+    }
     ;
 
 valueList:
@@ -335,6 +369,10 @@ value:
     |   VALUE_BOOL
     {
         $$ = std::make_shared<BoolLit>($1);
+    }
+    |   VALUE_DATETIME
+    {
+        $$ = std::make_shared<DateTimeLit>($1);
     }
     ;
 
@@ -501,4 +539,6 @@ alias: IDENTIFIER;
 tbName: IDENTIFIER;
 
 colName: IDENTIFIER;
+
+fileName: PATH;
 %%

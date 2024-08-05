@@ -44,7 +44,7 @@ class WriteRecord {
     WriteRecord(WType wtype, const std::string &tab_name, const Rid &rid)
         : wtype_(wtype), tab_name_(tab_name), rid_(rid) {}
 
-    // constructor for delete or insert
+    // constructor for delete
     WriteRecord(WType wtype, const std::string &tab_name, const Rid &rid, const RmRecord &record)
         : wtype_(wtype), tab_name_(tab_name), rid_(rid), record_(std::make_shared<RmRecord>(record)) {}
 
@@ -125,16 +125,20 @@ struct std::hash<LockDataId> {
 };
 
 /* 事务回滚原因 */
-enum class AbortReason { LOCK_ON_SHIRINKING = 0, UPGRADE_CONFLICT, DEADLOCK_PREVENTION };
+enum class AbortReason { LOCK_ON_SHIRINKING = 0, UPGRADE_CONFLICT, DEADLOCK_PREVENTION, CONSTRAINT_VIOLATION };
 
 /* 事务回滚异常，在rmdb.cpp中进行处理 */
 class TransactionAbortException : public std::exception {
     txn_id_t txn_id_;
     AbortReason abort_reason_;
+    std::string abort_message_;
 
    public:
     explicit TransactionAbortException(txn_id_t txn_id, AbortReason abort_reason)
         : txn_id_(txn_id), abort_reason_(abort_reason) {}
+
+    explicit TransactionAbortException(txn_id_t txn_id, AbortReason abort_reason, std::string abort_msg)
+            : txn_id_(txn_id), abort_reason_(abort_reason), abort_message_(abort_msg) {}
 
     txn_id_t get_transaction_id() { return txn_id_; }
     AbortReason GetAbortReason() { return abort_reason_; }
@@ -153,6 +157,11 @@ class TransactionAbortException : public std::exception {
             case AbortReason::DEADLOCK_PREVENTION: {
                 return "Transaction " + std::to_string(txn_id_) + " aborted for deadlock prevention\n";
             } break;
+
+            case AbortReason::CONSTRAINT_VIOLATION: {
+                return "Transaction " + std::to_string(txn_id_) + " aborted for constraint_violation\n" +
+                    abort_message_ + "\n";
+            }
 
             default: {
                 return "Transaction aborted\n";

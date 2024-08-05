@@ -85,6 +85,20 @@ class RmFileHandle {
 
     RmPageHandle fetch_page_handle(int page_no) const;
 
+    /// recovery ///
+
+    void insert_redo(const InsertLogRecord& log);
+
+    void delete_redo(const DeleteLogRecord& log);
+
+    void update_redo(const UpdateLogRecord& log);
+
+    void insert_undo(const Rid &rid);
+
+    void delete_undo(const Rid &rid, char* buf);
+
+    void update_undo(const Rid& rid, char* buf);
+
    private:
     RmPageHandle create_page_handle();
 

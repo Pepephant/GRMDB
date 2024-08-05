@@ -37,13 +37,16 @@ class DeleteExecutor : public AbstractExecutor {
         conds_ = conds;
         rids_ = rids;
         context_ = context;
-        context_->lock_mgr_->lock_exclusive_on_table(context_->txn_,fh_->GetFd());
+        if(tab_.indexes.empty()) {
+            context_->lock_mgr_->lock_exclusive_on_table(context_->txn_,fh_->GetFd());
+        }else {
+            context_->lock_mgr_->lock_IX_on_table(context_->txn_,fh_->GetFd());
+        }
     }
 
     std::unique_ptr<RmRecord> Next() override {
         cols_ = tab_.cols;
         for (auto& rid: rids_) {
-            // if(context_->lock_mgr_->lock_exclusive_on_record(context_->txn_,rid,fh_->GetFd())){}
             auto tuple = fh_->get_record(rid, context_);
             if (eval_condition(conds_, tuple.get())) {
                 fh_->delete_record(rid, context_);
@@ -62,9 +65,18 @@ class DeleteExecutor : public AbstractExecutor {
                     memcpy(old_key + index.cols[i].offset, old_rec.data + offset, index.cols[i].len);
                 }
                 // 处理并发上锁 TODO
+                context_->lock_mgr_->lock_exclusive_on_record_gap(context_->txn_,rid,fh_->GetFd(),old_key,index,ih);
                 ih->delete_entry(old_key, context_->txn_);
             }
-            // context_->lock_mgr_->unlock(context_->txn_,LockDataId(fh_->GetFd(),rid,LockDataType::RECORD));
+
+            txn_id_t txn_id = context_->txn_->get_transaction_id();
+            lsn_t prev_lsn = context_->txn_->get_prev_lsn();
+            context_->txn_->set_prev_lsn(context_->log_mgr_->get_lsn());
+
+            int first_page = fh_->get_file_hdr().first_free_page_no;
+            int num_pages = fh_->get_file_hdr().num_pages;
+            DeleteLogRecord log(txn_id, prev_lsn, old_rec, rid, tab_name_, first_page, num_pages);
+            context_->log_mgr_->add_log_to_buffer(&log);
         }
         return nullptr;
     }

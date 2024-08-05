@@ -10,6 +10,7 @@ See the Mulan PSL v2 for more details. */
 
 #include "buffer_pool_manager.h"
 #include "common/config.h"
+#include "recovery/log_manager.h"
 #include <mutex>
 
 /**
@@ -49,6 +50,9 @@ void BufferPoolManager::update_page(Page *page, PageId new_page_id, frame_id_t n
     // 3 重置page的data，更新page id
 
     // std::scoped_lock<std::mutex> guard(latch_);
+    if((log_manager_ != nullptr) && page->get_page_lsn() > log_manager_->get_persist_lsn()) {
+        log_manager_->flush_log_to_disk();
+    }
     if (page->is_dirty_) {
         disk_manager_->write_page(page->get_page_id().fd, page->get_page_id().page_no, page->get_data(), PAGE_SIZE);
         page->is_dirty_ = false;
@@ -87,12 +91,12 @@ Page* BufferPoolManager::fetch_page(PageId page_id) {
         replacer_->pin(frame_id);
         return page;
     }
-    
+
     frame_id_t frame_id;
     if (!find_victim_page(&frame_id)) {
         return nullptr;
     }
-    
+
     Page* page = &pages_[frame_id];
     update_page(page, page_id, frame_id);
     disk_manager_->read_page(page->get_page_id().fd,page->get_page_id().page_no,page->get_data(),PAGE_SIZE);
@@ -123,25 +127,25 @@ bool BufferPoolManager::unpin_page(PageId page_id, bool is_dirty) {
         printf("can't find frame_id\n");
         return false;
     }
-    
+
     frame_id_t frame_id = page_table_[page_id];
     Page* page = &pages_[frame_id];
-    
+
     if (page->pin_count_ == 0) {
         std::cout << "Page " << page_id.page_no << ":";
         printf("page->pin_count==0\n");
         return false;
     }
-    
+
     page->pin_count_--;
     if (page->pin_count_ == 0) {
         replacer_->unpin(frame_id);
     }
-    
+
     if (is_dirty) {
         page->is_dirty_ = true;
     }
-    
+
     return true;
 }
 
@@ -157,7 +161,7 @@ bool BufferPoolManager::flush_page(PageId page_id) {
     // 1.1 目标页P没有被page_table_记录 ，返回false
     // 2. 无论P是否为脏都将其写回磁盘。
     // 3. 更新P的is_dirty_
-   
+
     std::scoped_lock<std::mutex> guard(latch_);
     if (page_table_.find(page_id) == page_table_.end()) {
         return false;
@@ -205,6 +209,8 @@ Page* BufferPoolManager::new_page(PageId* page_id) {
     page->pin_count_++;
     replacer_->pin(frame_id);
 
+    disk_manager_->write_page(page_id->fd, page_id->page_no, page->data_, PAGE_SIZE);
+
     return page;
 }
 
@@ -217,7 +223,7 @@ bool BufferPoolManager::delete_page(PageId page_id) {
     // 1.   在page_table_中查找目标页，若不存在返回true
     // 2.   若目标页的pin_count不为0，则返回false
     // 3.   将目标页数据写回磁盘，从页表中删除目标页，重置其元数据，将其加入free_list_，返回true
-    
+
     std::scoped_lock<std::mutex> guard(latch_);
     if (page_table_.find(page_id) == page_table_.end()) {
         return true;

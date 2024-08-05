@@ -17,8 +17,6 @@ See the Mulan PSL v2 for more details. */
  * @return {lsn_t} 返回该日志的日志记录号
  */
 lsn_t LogManager::add_log_to_buffer(LogRecord* log_record) {
-    std::unique_lock<std::mutex> lock(latch_); // 确保线程安全
-
     // 计算日志记录的大小
     int log_record_size = log_record->log_tot_len_;
 
@@ -28,19 +26,19 @@ lsn_t LogManager::add_log_to_buffer(LogRecord* log_record) {
         flush_log_to_disk();
     }
 
-    // 生成新的日志序列号（LSN）
-    global_lsn_++;
+    std::unique_lock<std::mutex> lock(latch_); // 确保线程安全
 
     // 设置日志记录的LSN
-    log_record->lsn_ = global_lsn_;
+
+    log_record->lsn_ = global_lsn_++;
 
     // 将日志记录复制到日志缓冲区中
     char *dest = new char[log_record_size];
     log_record->serialize(dest);
-    std::memcpy(log_buffer_.buffer_+log_buffer_.offset_, dest, sizeof(dest));
+    std::memcpy(log_buffer_.buffer_+log_buffer_.offset_, dest, log_record_size);
 
     // 更新缓冲区大小和下一个LSN
-    log_buffer_.offset_ += strlen(dest);
+    log_buffer_.offset_ += log_record_size;
 
     return log_record->lsn_;
 }
@@ -57,7 +55,7 @@ void LogManager::flush_log_to_disk() {
     }
 
     // 将日志缓冲区的内容写入到磁盘文件中
-    disk_manager_->write_log(log_buffer_.buffer_, sizeof(log_buffer_.buffer_));
+    disk_manager_->write_log(log_buffer_.buffer_, log_buffer_.offset_);
 
     // 清空日志缓冲区
     log_buffer_.offset_ = 0;

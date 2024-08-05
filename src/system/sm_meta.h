@@ -39,6 +39,15 @@ struct ColMeta {
     friend std::istream &operator>>(std::istream &is, ColMeta &col) {
         return is >> col.tab_name >> col.name >> col.type >> col.len >> col.offset >> col.index;
     }
+
+    friend bool operator==(const ColMeta &lhs, const ColMeta &rhs) {
+        return lhs.tab_name == rhs.tab_name &&
+               lhs.name == rhs.name &&
+               lhs.type == rhs.type &&
+               lhs.len == rhs.len &&
+               lhs.offset == rhs.offset &&
+               lhs.index == rhs.index;
+    }
 };
 
 /* 索引元数据 */
@@ -64,6 +73,17 @@ struct IndexMeta {
             index.cols.push_back(col);
         }
         return is;
+    }
+
+    friend bool operator==(const IndexMeta &lhs, const IndexMeta &rhs) {
+        if (lhs.tab_name != rhs.tab_name) return false;
+        if (lhs.col_tot_len != rhs.col_tot_len) return false;
+        if (lhs.col_num != rhs.col_num) return false;
+        if (lhs.cols.size() != rhs.cols.size()) return false;
+        for (size_t i = 0; i < lhs.cols.size(); ++i) {
+            if (!(lhs.cols[i] == rhs.cols[i])) return false;
+        }
+        return true;
     }
 
     bool MatchIndex(std::vector<Condition>& conditions) {
@@ -92,6 +112,15 @@ struct IndexMeta {
             return true;
         }
         return false;
+    }
+
+    IndexMeta() {};
+
+    IndexMeta(const IndexMeta &other) {
+        tab_name = other.tab_name;
+        col_num = other.col_num;
+        col_tot_len = other.col_tot_len;
+        for(const auto& col : other.cols) cols.push_back(col);
     }
 };
 
@@ -255,6 +284,18 @@ class DbMeta {
         }
 
         return pos->second;
+    }
+
+    std::vector<IndexMeta> get_all_indexes() {
+        std::vector<IndexMeta> indexes;
+
+        for (auto& tab: tabs_) {
+            for (auto& index: tab.second.indexes) {
+                indexes.push_back(index);
+            }
+        }
+
+        return indexes;
     }
 
     // 重载操作符 <<

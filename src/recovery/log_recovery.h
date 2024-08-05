@@ -20,7 +20,7 @@ class RedoLogsInPage {
 public:
     RedoLogsInPage() { table_file_ = nullptr; }
     RmFileHandle* table_file_;
-    std::vector<lsn_t> redo_logs_;   // 在该page上需要redo的操作的lsn
+    std::deque<lsn_t> redo_logs_;   // 在该page上需要redo的操作的lsn
 };
 
 class RecoveryManager {
@@ -35,6 +35,11 @@ public:
     void redo();
     void undo();
 private:
+    std::map<txn_id_t, lsn_t> ATT;
+    std::unordered_map<PageId, lsn_t> DPT;
+    std::map<lsn_t, int> log_offsets_;
+
+    lsn_t last_lsn_;
     LogBuffer buffer_;                                              // 读入日志
     DiskManager* disk_manager_;                                     // 用来读写文件
     BufferPoolManager* buffer_pool_manager_;                        // 对页面进行读写

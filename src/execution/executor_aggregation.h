@@ -67,7 +67,7 @@ private:
 public:
     AggregateExecutor(std::unique_ptr<AbstractExecutor> prev, const std::vector<AggrCol>& aggregates,
                       const std::vector<TabCol>& group_bys, const std::vector<HavingCond>& havings,
-                              Context *context) {
+                      Context *context) {
         prev_ = std::move(prev);
         len_ = 0;
 
